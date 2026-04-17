@@ -1,0 +1,55 @@
+﻿# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS and IDE
+.DS_Store
+.vscode/
+*.swp
+*~
+.idea/
+
+# Model/runtime outputs
+output/
+exports/
+supplements/
+validation_compare/
+feature_engineered_dataset/
+test_shap_out/
+
+# Plot workspace artifacts
+new_plot/*.png
+new_plot/*.pdf
+new_plot/*.svg
+new_plot/*.xlsx
+new_plot/cv_protocols/
+new_plot/diagnostics/
+new_plot/learning_curves/
+new_plot/predictions/
+
+# Dataset files (keep folder, not raw files)
+dataset/*.csv
+dataset/*.xlsx
+dataset/*.xls
+dataset/*.docx

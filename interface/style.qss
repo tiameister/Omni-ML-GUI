@@ -1,0 +1,8 @@
+/*
+Deprecated stylesheet.
+
+Single source of truth:
+  interface/style/style.qss
+
+This file is intentionally left as a stub to avoid style drift.
+*/
