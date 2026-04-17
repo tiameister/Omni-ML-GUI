@@ -72,8 +72,7 @@ def train_and_evaluate(
         all_models["XGBoost"] = XGBRegressor(
             n_estimators=800, learning_rate=0.05, max_depth=6,
             subsample=0.9, colsample_bytree=0.9, reg_lambda=1.0,
-            tree_method='hist', random_state=RSTATE, n_jobs=-1,
-            early_stopping_rounds=15, eval_metric="rmse"  # Note: Requires eval_set in `.fit()`, handled dynamically if implemented, but adding params keeps future-proofing. Early stopping in XGB via scikit-API is mostly useful in standalone mode rather than cross-val unless fit_params is passed.
+            tree_method='hist', random_state=RSTATE, n_jobs=-1
         )
 
     scoring = {

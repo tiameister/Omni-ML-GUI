@@ -1,11 +1,13 @@
 from PyQt6.QtWidgets import (
+    QApplication,
+    QStyle,
     QTableView,
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QComboBox, QSpinBox, QCheckBox, QProgressBar, QTextEdit,
     QTabWidget, QScrollArea, QTableWidget, QFrame, QGridLayout, QListWidget, QAbstractItemView, QSizePolicy
 )
 from interface.widgets.checkboxes import create_model_checkboxes, create_plot_checkboxes
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont
 from utils.localization import tr
 
@@ -130,10 +132,19 @@ def apply_translations(w):
 
     # Added missing translated labels for initialization/language switch
     w.step1_title.setText(tr("controls.workflow.step1_title", default="Overview & Dataset"))
-    w.step2_title.setText(tr("controls.workflow.step2_title", default="Variables & Validation Setup"))
-    w.step3_title.setText(tr("controls.workflow.step3_title", default="Model Pool Setup"))
-    w.step4_title.setText(tr("controls.workflow.step4_title", default="Execution & Monitoring"))
+    w.step2_title.setText(tr("controls.workflow.step2_title", default="Variables"))
+    w.step3_title.setText(tr("controls.workflow.step3_title", default="Models"))
+    w.step4_title.setText(tr("controls.workflow.step4_title", default="Train"))
     
+    if hasattr(w, "data_empty_title"):
+        w.data_empty_title.setText(tr("controls.dataset.empty_title", default="No dataset loaded"))
+    if hasattr(w, "data_empty_subtitle"):
+        w.data_empty_subtitle.setText(
+            tr(
+                "controls.dataset.empty_subtitle",
+                default="Load a CSV or Excel file to begin.",
+            )
+        )
     w.data_info_label.setText(tr("status.no_dataset_loaded", default="No dataset loaded yet."))
     w.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
     w.model_summary_label.setText(tr("status.no_model_selected", default="No model selected yet."))
@@ -244,22 +255,34 @@ def build_layout():
     # Main container and horizontal layout
     w = QWidget()
     main_layout = QHBoxLayout(w)
-    main_layout.setContentsMargins(10, 8, 10, 10)
-    main_layout.setSpacing(8)
+    main_layout.setContentsMargins(16, 16, 16, 16)
+    main_layout.setSpacing(16)
 
     # Controls shared by center panel
     w.load_button = QPushButton("Load Dataset")
     w.load_button.setObjectName("accentButton")
-    # Info row next to Load Data: file info + preview
-    info_row = QHBoxLayout()
+
+    # Add basic icons (uses platform-native glyphs; can be swapped to SVG later)
+    try:
+        w.load_button.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+        w.load_button.setIconSize(QSize(16, 16))
+    except Exception:
+        pass
+
     w.data_info_label = QLabel("No dataset loaded yet.")
     w.data_info_label.setObjectName("hintLabel")
     w.data_info_label.setWordWrap(True)
+
     w.preview_button = QPushButton("Preview")
     w.preview_button.setObjectName("ghostButton")
     w.preview_button.setMinimumWidth(92)
     w.preview_button.setEnabled(False)
-    info_row.addWidget(w.data_info_label)
+    try:
+        w.preview_button.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView))
+        w.preview_button.setIconSize(QSize(16, 16))
+    except Exception:
+        pass
+
     w.info_button = QPushButton("About / Guide")
     w.info_button.setObjectName("ghostButton")
     w.vars_button = QPushButton("Select Variables")
@@ -323,8 +346,8 @@ def build_layout():
     # Center panel: Controls + Plots
     center_panel = QWidget(); center_panel.setObjectName("workPanel")
     center_layout = QVBoxLayout(center_panel)
-    center_layout.setContentsMargins(8, 8, 8, 8)
-    center_layout.setSpacing(10)
+    center_layout.setContentsMargins(16, 16, 16, 16)
+    center_layout.setSpacing(16)
 
     center_scroll = QScrollArea()
     center_scroll.setObjectName("centerScroll")
@@ -336,7 +359,7 @@ def build_layout():
     center_content.setObjectName("centerContent")
     center_content_layout = QVBoxLayout(center_content)
     center_content_layout.setContentsMargins(0, 0, 0, 0)
-    center_content_layout.setSpacing(10)
+    center_content_layout.setSpacing(16)
 
     w.data_card = QFrame()
     w.data_card.setObjectName("workflowCard")
@@ -357,9 +380,10 @@ def build_layout():
     data_card_layout.addSpacing(16)
     
     action_row = QHBoxLayout()
+    action_row.setSpacing(8)
     action_row.addWidget(w.load_button)
-    action_row.addStretch()
     action_row.addWidget(w.preview_button)
+    action_row.addStretch(1)
     data_card_layout.addLayout(action_row)
     
     data_card_layout.addSpacing(12)
@@ -368,7 +392,47 @@ def build_layout():
     w.info_card.setObjectName("summaryCard")
     info_card_layout = QVBoxLayout(w.info_card)
     info_card_layout.setContentsMargins(16, 16, 16, 16)
-    info_card_layout.addLayout(info_row)
+
+    # Empty state (shown until a dataset is loaded)
+    w.data_empty_state = QWidget()
+    w.data_empty_state.setObjectName("emptyState")
+    empty_layout = QVBoxLayout(w.data_empty_state)
+    empty_layout.setContentsMargins(0, 0, 0, 0)
+    empty_layout.setSpacing(8)
+
+    w.data_empty_icon = QLabel()
+    w.data_empty_icon.setObjectName("emptyStateIcon")
+    w.data_empty_icon.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+    try:
+        pix = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon).pixmap(48, 48)
+        w.data_empty_icon.setPixmap(pix)
+    except Exception:
+        pass
+
+    w.data_empty_title = QLabel("No dataset loaded")
+    w.data_empty_title.setObjectName("emptyStateTitle")
+    w.data_empty_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+    w.data_empty_subtitle = QLabel("Load a CSV or Excel file to begin.")
+    w.data_empty_subtitle.setObjectName("emptyStateSubtitle")
+    w.data_empty_subtitle.setWordWrap(True)
+    w.data_empty_subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+    empty_layout.addWidget(w.data_empty_icon)
+    empty_layout.addWidget(w.data_empty_title)
+    empty_layout.addWidget(w.data_empty_subtitle)
+
+    # Loaded state (shown after a dataset is loaded)
+    w.data_loaded_state = QWidget()
+    w.data_loaded_state.setObjectName("loadedState")
+    loaded_layout = QHBoxLayout(w.data_loaded_state)
+    loaded_layout.setContentsMargins(0, 0, 0, 0)
+    loaded_layout.setSpacing(8)
+    loaded_layout.addWidget(w.data_info_label, 1)
+    w.data_loaded_state.setVisible(False)
+
+    info_card_layout.addWidget(w.data_empty_state)
+    info_card_layout.addWidget(w.data_loaded_state)
     
     data_card_layout.addWidget(w.info_card)
     data_card_layout.addStretch(1)
@@ -590,7 +654,8 @@ def build_layout():
 
     w.step_tabs = QTabWidget()
     w.step_tabs.setObjectName("workflowTabs")
-    w.step_tabs.setDocumentMode(True)
+    # Let QSS own the look (avoid native "utility" tab chrome)
+    w.step_tabs.setDocumentMode(False)
 
     step_data = QWidget(); step_data_lay = QVBoxLayout(step_data)
     step_data_lay.setContentsMargins(0, 0, 0, 0)
@@ -616,12 +681,11 @@ def build_layout():
     w.step_tabs.addTab(step_config, "2. Variables")
     w.step_tabs.addTab(step_model, "3. Models")
     w.step_tabs.addTab(step_train, "4. Train")
-    center_content_layout.addWidget(w.step_tabs)
+    center_content_layout.addWidget(w.step_tabs, 1)
 
     # Keep the toolbox instance alive by adding it to the layout but hidden; the dialog owns the detailed UI
     center_content_layout.addWidget(plot_group)
     plot_group.setVisible(False)
-    center_content_layout.addStretch()
 
     center_scroll.setWidget(center_content)
     center_layout.addWidget(center_scroll)
@@ -725,7 +789,7 @@ def build_layout():
     results_layout.addWidget(w.results_decision_card)
 
     w.results_tabs = QTabWidget()
-    w.results_tabs.setDocumentMode(True)
+    w.results_tabs.setDocumentMode(False)
 
     summary_tab = QWidget()
     summary_layout = QVBoxLayout(summary_tab)

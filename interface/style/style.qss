@@ -1,6 +1,6 @@
 /* Global Theme */
 * {
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Segoe UI", "Segoe UI Variable Text", Tahoma, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Segoe UI", "Segoe UI Variable Text", Tahoma, sans-serif;
   font-size: 10.5pt;
   color: #1A2530;
 }
@@ -124,6 +124,18 @@ QWidget {
 #hintLabel {
   color: #5B6C7B;
   font-size: 10pt;
+}
+
+/* Dataset empty state */
+#emptyStateTitle {
+  color: #102333;
+  font-size: 12.8pt;
+  font-weight: 700;
+}
+
+#emptyStateSubtitle {
+  color: #5B6C7B;
+  font-size: 10.2pt;
 }
 
 #workflowBanner {
@@ -471,12 +483,19 @@ QTabBar::tab:selected {
   min-width: 100px;
   padding: 10px 16px;
   font-weight: 500;
+  border-radius: 10px;
+  margin-right: 8px;
+}
+
+#workflowTabs QTabBar::tab:hover {
+  background: #F4F8FC;
 }
 
 #workflowTabs QTabBar::tab:selected {
   color: #007AFF;
-  border-bottom: 2px solid #007AFF;
-  background: transparent;
+  border-bottom: 2px solid transparent;
+  background: #FFFFFF;
+  border: 1px solid #DCDCE0;
 }
 
 #workflowTabs QTabBar::tab:disabled {

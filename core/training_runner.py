@@ -611,6 +611,44 @@ def run_training(
 
         plot_progress_inc()
 
+
+    try:
+        import gc
+        import platform
+        from datetime import datetime
+        metadata_export = {
+            "experiment_id": run_id,
+            "timestamp": datetime.now().isoformat(),
+            "dataset_label": dataset_label or "unknown",
+            "dataset_rows": int(len(df)),
+            "dataset_cols": int(len(df.columns)),
+            "target_variable": target,
+            "input_features": features,
+            "cv_strategy": {
+                "mode": cv_mode,
+                "folds": cv_folds,
+            },
+            "models_selected": selected_models,
+            "system_info": {
+                "os": platform.system(),
+                "python_version": platform.python_version()
+            },
+            "results": metrics_df.to_dict(orient="records") if not metrics_df.empty else []
+        }
+        
+        json_path = os.path.join(run_outdir, "experiment_metadata.json")
+        with open(json_path, "w", encoding="utf-8") as meta_f:
+            json.dump(metadata_export, meta_f, indent=4, ensure_ascii=False)
+        
+        LOGGER.info(f"Experiment metadata exported successfully to {json_path}")
+        
+        # Hard memory sweep for long GUI sessions
+        del metadata_export
+        gc.collect()
+        
+    except Exception as meta_exc:
+        LOGGER.warning(f"Could not generate experiment metadata JSON: {meta_exc}")
+
     try:
         for root_dir, dirs, files in os.walk(run_outdir, topdown=False):
             for d in dirs:

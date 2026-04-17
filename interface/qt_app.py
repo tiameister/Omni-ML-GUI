@@ -100,6 +100,21 @@ class _TrainWorker(QObject):
             self.error.emit(str(e))
 
 
+class _DatasetLoadWorker(QObject):
+    finished = pyqtSignal(object, object, object)  # returns (df, error_msg, path)
+
+    def __init__(self, load_callable, path):
+        super().__init__()
+        self.load_callable = load_callable
+        self.path = path
+
+    def run(self):
+        try:
+            df = self.load_callable(self.path)
+            self.finished.emit(df, None, self.path)
+        except Exception as e:
+            self.finished.emit(None, str(e), self.path)
+
 
 class MLTrainerApp(QMainWindow):
     def __init__(self):
@@ -521,8 +536,8 @@ class MLTrainerApp(QMainWindow):
         container = QWidget()
         container.setObjectName("appCanvas")
         vbox = QVBoxLayout(container)
-        vbox.setContentsMargins(8, 8, 8, 8)
-        vbox.setSpacing(8)
+        vbox.setContentsMargins(16, 16, 16, 16)
+        vbox.setSpacing(16)
         vbox.addWidget(self.header)
         vbox.addWidget(central)
         self.setCentralWidget(container)
@@ -2257,6 +2272,10 @@ class MLTrainerApp(QMainWindow):
                 cols=df.shape[1],
             )
         )
+        if hasattr(c, "data_empty_state"):
+            c.data_empty_state.setVisible(False)
+        if hasattr(c, "data_loaded_state"):
+            c.data_loaded_state.setVisible(True)
         c.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
         c.selection_label.setToolTip("")
         c.preview_button.setEnabled(True)
@@ -3252,21 +3271,31 @@ class MLTrainerApp(QMainWindow):
         event.ignore()
 
     def _load_dataset_path(self, path: str):
-        try:
-            df = self.state.load_dataset(path)
-        except Exception as e:
-            QMessageBox.critical(self, tr("dialogs.load_error.title", default="Load Error"), str(e))
-            LOGGER.exception("Failed loading dataset from %s", path)
-            self._push_notification(
-                "error",
-                tr(
-                    "notifications.dataset_load_failed",
-                    default="Dataset load failed: {filename}",
-                    filename=os.path.basename(path),
-                ),
-            )
-            return
+        self._push_notification("info", tr("notifications.loading_dataset", default="Loading dataset in background..."), timeout=3000)
+        self.statusBar().showMessage(tr("status.loading_data", default="Loading dataset..."))
+        self.setEnabled(False)  # Lock UI
+        
+        self._load_thread = QThread(self)
+        self._load_worker = _DatasetLoadWorker(self.state.load_dataset, path)
+        self._load_worker.moveToThread(self._load_thread)
+        
+        self._load_thread.started.connect(self._load_worker.run)
+        self._load_worker.finished.connect(self._on_dataset_load_finished)
+        self._load_worker.finished.connect(self._load_thread.quit)
+        self._load_worker.finished.connect(self._load_worker.deleteLater)
+        self._load_thread.finished.connect(self._load_thread.deleteLater)
+        self._load_thread.start()
 
+    def _on_dataset_load_finished(self, df, error_msg, path):
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+        
+        if error_msg is not None:
+            QMessageBox.critical(self, tr("dialogs.load_error.title", default="Load Error"), str(error_msg))
+            LOGGER.exception(f"Failed loading dataset from {path}")
+            self._push_notification("error", tr("notifications.dataset_load_failed", default=f"Dataset load failed: {os.path.basename(path)}"))
+            return
+            
         dlg = DataPreviewDialog(df, self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -3902,6 +3931,10 @@ class MLTrainerApp(QMainWindow):
         c.plot_progress_bar.setMaximum(1)
 
         c.data_info_label.setText(tr("status.no_dataset_loaded", default="No dataset loaded yet."))
+        if hasattr(c, "data_loaded_state"):
+            c.data_loaded_state.setVisible(False)
+        if hasattr(c, "data_empty_state"):
+            c.data_empty_state.setVisible(True)
         c.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
         c.selection_label.setToolTip("")
         c.status_label.setText(tr("status.session_reset_load_begin", default="Session reset. Load a dataset to begin."))
@@ -4129,15 +4162,17 @@ def run_app():
     except Exception:
         pass
 
-    # Set global font (macOS uses system font; Windows/Linux fall back to Segoe UI).
-    from PyQt6.QtGui import QFont
-    if sys.platform == "darwin":
-        try:
+    # Typography: prefer Inter (if installed), otherwise fall back to system fonts.
+    from PyQt6.QtGui import QFont, QFontDatabase
+    try:
+        if "Inter" in QFontDatabase.families():
+            app.setFont(QFont("Inter", 10))
+        elif sys.platform == "darwin":
             app.setFont(QFont(".AppleSystemUIFont", 10))
-        except Exception:
-            pass
-    else:
-        app.setFont(QFont("Segoe UI", 10))
+        else:
+            app.setFont(QFont("Segoe UI", 10))
+    except Exception:
+        pass
     # Set application icon
     proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     icon_path = os.path.join(proj_root, 'images', 'fau.png')
