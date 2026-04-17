@@ -333,7 +333,18 @@
       "description": "Bu uygulama; veri yükleme, özellik seçimi, arka planda çoklu model eğitimi\nve yayın kalitesinde grafiklerle açıklanabilirlik çıktıları (SHAP) üretimi için\nprofesyonel bir iş akışı sunar.",
       "key_features": "\nÖne çıkan özellikler:\n• Kalıcı ayarlara sahip modern, duyarlı arayüz\n• İlerleme ve günlüklerle arka plan eğitimi\n• Güçlü metrikler, istatistikler ve Excel dışa aktarımları\n• Yapılandırılabilir SHAP açıklanabilirliği\n• Yayına hazır grafikler (PNG/PDF)",
       "open_guide": "Kullanıcı Kılavuzunu Aç (PDF)",
-      "guide_missing": "Proje kökünde info.pdf bulunamadı."
+      "guide_missing": "Proje kökünde info.pdf bulunamadı.",
+      "tab_app": "Uygulama",
+      "tab_dev": "Geliştirici",
+      "tab_lic": "Lisanslar",
+      "app_title": "Machine Learning Trainer",
+      "app_subtitle": "Profesyonel Regresyon Modeli Eğitimi ve Değerlendirmesi",
+      "app_desc": "Bu uygulama veri yükleme, özellik seçimi, arka planda paralel model eğitimi, \nve yayın kalitesinde açıklamalı (SHAP) çıktılar elde etmek için tasarlanmış \nprofesyonel bir makine öğrenmesi iş akışı sunar.",
+      "dev_title": "Geliştirici / Yazar",
+      "dev_info": "<div style='text-align: center;'><br><br><span style='font-size:18px; font-weight:bold;'>Taha İlter Akar</span><br><br><span style='font-size:14px;'>🎓 <i>FAU Erlangen-Nürnberg</i></span><br><span style='font-size:14px;'>💼 Araştırma Görevlisi, <i>Fraunhofer IIS</i></span><br><br><span style='font-size:14px;'>✉️ <a href='mailto:taha.ilter.akar@fau.de' style='color:#0B57D0; text-decoration:none;'>taha.ilter.akar@fau.de</a></span><br><br><br><span style='font-size:13px; color:#555;'>Bu uygulama veri bilimi ve makine öğrenmesi süreçlerini otomatize edip <br>profesyonel bir araç seti sunmak üzere tasarlanmıştır.</span></div>",
+      "lic_title": "Açık Kaynak Lisansları ve Kullanılan Teknolojiler",
+      "lic_desc": "Bu yazılım aşağıdaki açık kaynak kütüphane ve çatıları kullanmaktadır:",
+      "lic_footer": "Tüm telif hakları ve ticari markalar ilgili hak sahiplerine aittir."
     },
     "publication_helper": {
       "title": "Yayın Stüdyosu",

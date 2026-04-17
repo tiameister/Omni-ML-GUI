@@ -936,7 +936,7 @@ class AboutDialog(QDialog):
     """General information about the application."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Hakkında - Machine Learning Trainer")
+        self.setWindowTitle(tr("dialogs.about.title", default="About - Machine Learning Trainer"))
         self.resize(680, 560)
         self.setMinimumSize(580, 460)
         _restore_geometry(self, "dialogs/About/geometry")
@@ -953,13 +953,13 @@ class AboutDialog(QDialog):
         v_app.setContentsMargins(20, 20, 20, 20)
         v_app.setSpacing(12)
         
-        title = QLabel("Machine Learning Trainer")
+        title = QLabel(tr("dialogs.about.app_title", default="Machine Learning Trainer"))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         from PyQt6.QtGui import QFont
         title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         title.setObjectName("titleLabel")
         
-        subtitle = QLabel("Profesyonel Regresyon Modeli Eğitimi ve Değerlendirmesi")
+        subtitle = QLabel(tr("dialogs.about.app_subtitle", default="Professional Regression Model Training and Evaluation"))
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setObjectName("subtitleLabel")
         
@@ -967,7 +967,7 @@ class AboutDialog(QDialog):
         v_app.addWidget(subtitle)
         v_app.addSpacing(16)
         
-        desc = QLabel("Bu uygulama veri yükleme, özellik seçimi, arka planda paralel model eğitimi, \nve yayın kalitesinde açıklamalı (SHAP) çıktılar elde etmek için tasarlanmış \nprofesyonel bir makine öğrenmesi iş akışı sunar.")
+        desc = QLabel(tr("dialogs.about.app_desc", default="This application provides a professional machine learning workflow designed for data loading, feature selection, parallel model training in the background, and generating publication-quality explainer (SHAP) outputs."))
         desc.setWordWrap(True)
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v_app.addWidget(desc)
@@ -979,20 +979,12 @@ class AboutDialog(QDialog):
         v_dev.setContentsMargins(20, 20, 20, 20)
         v_dev.setSpacing(12)
         
-        dev_title = QLabel("Geliştirici / Yazar")
+        dev_title = QLabel(tr("dialogs.about.dev_title", default="Developer / Author"))
         dev_title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         dev_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v_dev.addWidget(dev_title)
         
-        dev_info = QLabel(
-            "<div style='text-align: center;'><br><br>"
-            "<span style='font-size:18px; font-weight:bold;'>Taha İlter Akar</span><br><br>"
-            "<span style='font-size:14px;'>🎓 <i>FAU Erlangen-Nürnberg</i></span><br>"
-            "<span style='font-size:14px;'>💼 Araştırma Görevlisi, <i>Fraunhofer IIS</i></span><br><br>"
-            "<span style='font-size:14px;'>✉️ <a href='mailto:taha.ilter.akar@fau.de' style='color:#0B57D0; text-decoration:none;'>taha.ilter.akar@fau.de</a></span><br><br><br>"
-            "<span style='font-size:13px; color:#555;'>Bu uygulama veri bilimi ve makine öğrenmesi süreçlerini otomatize edip <br>"
-            "profesyonel bir araç seti sunmak üzere tasarlanmıştır.</span></div>"
-        )
+        dev_info = QLabel(tr("dialogs.about.dev_info", default="Developer Info"))
         dev_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         dev_info.setOpenExternalLinks(True)
         v_dev.addWidget(dev_info)
@@ -1005,8 +997,8 @@ class AboutDialog(QDialog):
         
         lic_txt = QTextEdit()
         lic_txt.setReadOnly(True)
-        lic_content = """<h3>Açık Kaynak Lisansları ve Kullanılan Teknolojiler</h3>
-            <p>Bu yazılım aşağıdaki açık kaynak kütüphane ve çatıları kullanmaktadır:</p>
+        lic_content = f"""<h3>{tr("dialogs.about.lic_title", default="Open Source Licenses")}</h3>
+            <p>{tr("dialogs.about.lic_desc", default="This software uses the following libraries:")}</p>
             <ul>
             <li><b>Python 3</b> (PSF License)</li>
             <li><b>NumPy</b> (BSD 3-Clause)</li>
@@ -1021,13 +1013,13 @@ class AboutDialog(QDialog):
             <li><b>XGBoost</b> (Apache License 2.0)</li>
             <li><b>OpenPyXL</b> (MIT License)</li>
             </ul>
-            <p>Tüm telif hakları ve ticari markalar ilgili hak sahiplerine aittir.</p>"""
+            <p>{tr("dialogs.about.lic_footer", default="All copyrights belong to their respective owners.")}</p>"""
         lic_txt.setHtml(lic_content)
         v_lic.addWidget(lic_txt)
 
-        self.tabs.addTab(tab_app, "Uygulama")
-        self.tabs.addTab(tab_dev, "Geliştirici")
-        self.tabs.addTab(tab_lic, "Lisanslar")
+        self.tabs.addTab(tab_app, tr("dialogs.about.tab_app", default="Application"))
+        self.tabs.addTab(tab_dev, tr("dialogs.about.tab_dev", default="Developer"))
+        self.tabs.addTab(tab_lic, tr("dialogs.about.tab_lic", default="Licenses"))
         
         root.addWidget(self.tabs)
 

@@ -333,7 +333,18 @@
       "description": "This application provides a professional workflow for loading data,\nselecting features, training multiple models in the background,\nand generating publication-quality plots and explainability outputs (SHAP).",
       "key_features": "\nKey features:\n• Modern, responsive UI with persistent settings\n• Background training with progress and logs\n• Robust metrics, statistics, and Excel exports\n• SHAP explainability with configurable options\n• Publication-ready plots (PNG/PDF)",
       "open_guide": "Open User Guide (PDF)",
-      "guide_missing": "info.pdf not found in project root."
+      "guide_missing": "info.pdf not found in project root.",
+      "tab_app": "Application",
+      "tab_dev": "Developer",
+      "tab_lic": "Licenses",
+      "app_title": "Machine Learning Trainer",
+      "app_subtitle": "Professional Regression Model Training and Evaluation",
+      "app_desc": "This application provides a professional machine learning workflow designed for data loading, feature selection, parallel model training in the background, and generating publication-quality explainer (SHAP) outputs.",
+      "dev_title": "Developer / Author",
+      "dev_info": "<div style='text-align: center;'><br><br><span style='font-size:18px; font-weight:bold;'>Taha İlter Akar</span><br><br><span style='font-size:14px;'>🎓 <i>FAU Erlangen-Nürnberg</i></span><br><span style='font-size:14px;'>💼 Research Assistant, <i>Fraunhofer IIS</i></span><br><br><span style='font-size:14px;'>✉️ <a href='mailto:taha.ilter.akar@fau.de' style='color:#0B57D0; text-decoration:none;'>taha.ilter.akar@fau.de</a></span><br><br><br><span style='font-size:13px; color:#555;'>This application is designed to automate data science and machine learning processes <br>and provide a professional toolset.</span></div>",
+      "lic_title": "Open Source Licenses and Used Technologies",
+      "lic_desc": "This software uses the following open source libraries and frameworks:",
+      "lic_footer": "All copyrights and trademarks belong to their respective owners."
     },
     "publication_helper": {
       "title": "Publication Studio",

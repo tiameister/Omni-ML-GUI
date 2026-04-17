@@ -127,6 +127,21 @@ def apply_translations(w):
             blockers=tr("controls.feedback.blockers_none", default="None"),
         )
     )
+
+    # Added missing translated labels for initialization/language switch
+    w.step1_title.setText(tr("controls.workflow.step1_title", default="Overview & Dataset"))
+    w.step2_title.setText(tr("controls.workflow.step2_title", default="Variables & Validation Setup"))
+    w.step3_title.setText(tr("controls.workflow.step3_title", default="Model Pool Setup"))
+    w.step4_title.setText(tr("controls.workflow.step4_title", default="Execution & Monitoring"))
+    
+    w.data_info_label.setText(tr("status.no_dataset_loaded", default="No dataset loaded yet."))
+    w.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
+    w.model_summary_label.setText(tr("status.no_model_selected", default="No model selected yet."))
+    w.progress_phase_label.setText(tr("status.idle", default="Idle"))
+    w.progress_timing_label.setText(tr("status.elapsed_eta_default", default="Elapsed: -- | ETA: --"))
+    w.status_label.setText(tr("status.ready_begin", default="Ready. Load a dataset to begin."))
+    w.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
+
     if hasattr(w, "feedback_event_label"):
         w.feedback_event_label.setText(
             tr(
@@ -831,7 +846,7 @@ def build_layout():
     
     from PyQt6.QtWidgets import QDialog
     w.dev_console_dialog = QDialog(w)
-    w.dev_console_dialog.setWindowTitle("Developer & Activity Console")
+    w.dev_console_dialog.setWindowTitle(tr("controls.dialogs.dev_console", default="Developer & Activity Console"))
     w.dev_console_dialog.resize(800, 600)
     dev_layout = QVBoxLayout(w.dev_console_dialog)
     w.dev_tabs = QTabWidget()
@@ -848,7 +863,7 @@ def build_layout():
 
     # Convert right_panel to a standalone dialog
     w.results_dialog = QDialog(w)
-    w.results_dialog.setWindowTitle("Results Hub")
+    w.results_dialog.setWindowTitle(tr("controls.dialogs.results_hub", default="Results Hub"))
     w.results_dialog.resize(900, 700)
     dialog_layout = QVBoxLayout(w.results_dialog)
     dialog_layout.setContentsMargins(0, 0, 0, 0)
