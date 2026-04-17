@@ -3,7 +3,7 @@ import sys
 import time
 import json
 import re
-from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QDialog, QLabel, QListWidgetItem, QTableWidgetItem
+from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QDialog, QListWidgetItem, QTableWidgetItem
 from PyQt6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction, QActionGroup
 from PyQt6.QtCore import Qt, QUrl, QSettings, QCoreApplication
 from PyQt6.QtGui import QDesktopServices
@@ -37,6 +37,67 @@ from utils.localization import i18n, tr
 
 LOGGER = get_logger(__name__)
 UI_LAYOUT_VERSION = 5
+
+
+class _TrainWorker(QObject):
+    finished = pyqtSignal(object, object, object, object, object, float)
+    error = pyqtSignal(str)
+    progress = pyqtSignal(int, int)
+    plot_progress = pyqtSignal(int, int)
+    log = pyqtSignal(str)
+
+    def __init__(
+        self,
+        effective_state,
+        selected_models,
+        selected_plots,
+        cv_mode,
+        cv_folds,
+        should_cancel_fn,
+        run_id,
+        dataset_label,
+        persist_outputs,
+        feature_value_labels,
+        shap_settings,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.effective_state = effective_state
+        self.selected_models = selected_models
+        self.selected_plots = selected_plots
+        self.cv_mode = cv_mode
+        self.cv_folds = cv_folds
+        self.should_cancel_fn = should_cancel_fn
+        self.run_id = run_id
+        self.dataset_label = dataset_label
+        self.persist_outputs = persist_outputs
+        self.feature_value_labels = feature_value_labels
+        self.shap_settings = shap_settings
+
+    def run(self):
+        t0 = time.time()
+        try:
+            metrics_df, fitted_models, stats_df, stats_summary_df, out_info = run_training(
+                self.effective_state,
+                self.selected_models,
+                self.selected_plots,
+                cv_mode=self.cv_mode,
+                cv_folds=self.cv_folds,
+                external_progress_cb=self.progress.emit,
+                external_plot_progress_cb=self.plot_progress.emit,
+                external_log_cb=self.log.emit,
+                should_cancel=self.should_cancel_fn,
+                run_id=self.run_id,
+                dataset_label=self.dataset_label,
+                persist_outputs=self.persist_outputs,
+                feature_value_labels=self.feature_value_labels,
+                shap_settings=self.shap_settings,
+            )
+            elapsed = time.time() - t0
+            self.finished.emit(metrics_df, fitted_models, stats_df, stats_summary_df, out_info, elapsed)
+        except Exception as e:
+            LOGGER.exception("Training worker failed")
+            self.error.emit(str(e))
 
 
 
@@ -76,11 +137,6 @@ class MLTrainerApp(QMainWindow):
         self._feedback_latest_event = tr("controls.feedback.latest_none", default="No recent event")
         self._feedback_jobs = tr("controls.feedback.jobs_idle", default="No active jobs")
         self._has_prompted_for_studio = False
-        # Set window icon
-        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-        icon_path = os.path.join(proj_root, 'images', 'fau.png')
-        if os.path.exists(icon_path):
-            pass
 
         self._restore_language_preference()
         self._restore_theme_preference()
@@ -210,6 +266,43 @@ class MLTrainerApp(QMainWindow):
         self.resize(1400, 860)
         self.setMinimumSize(980, 640)
         self.setAcceptDrops(True)
+        # macOS: restore native window chrome feel.
+        if sys.platform == "darwin":
+            try:
+                self.setUnifiedTitleAndToolBarOnMac(True)
+            except Exception:
+                pass
+            try:
+                self.setDocumentMode(True)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _clear_table(table) -> None:
+        if table is None:
+            return
+        # QTableView path
+        if hasattr(table, "setModel"):
+            try:
+                table.setModel(None)
+            except Exception:
+                pass
+        # QTableWidget path
+        if hasattr(table, "clear"):
+            try:
+                table.clear()
+            except Exception:
+                pass
+        if hasattr(table, "setRowCount"):
+            try:
+                table.setRowCount(0)
+            except Exception:
+                pass
+        if hasattr(table, "setColumnCount"):
+            try:
+                table.setColumnCount(0)
+            except Exception:
+                pass
 
     @staticmethod
     def _format_duration(seconds: float | None) -> str:
@@ -526,7 +619,8 @@ class MLTrainerApp(QMainWindow):
     def _setup_menu_bar(self):
         mb = self.menuBar()
         try:
-            mb.setNativeMenuBar(False)
+            # macOS: use system menu bar (Apple-like). Other OSes: keep in-window menu.
+            mb.setNativeMenuBar(sys.platform == "darwin")
         except Exception:
             pass
 
@@ -1131,44 +1225,68 @@ class MLTrainerApp(QMainWindow):
             return
 
         tbl = c.jobs_table
-        tbl.setSortingEnabled(False)
-        tbl.setRowCount(len(self._jobs))
-        status_colors = {
-            "Queued": QColor("#2E4D67"),
-            "Running": QColor("#125284"),
-            "Completed": QColor("#1E633B"),
-            "Failed": QColor("#8D1E1E"),
-            "Cancelled": QColor("#8A6200"),
-        }
-
-        for row, job in enumerate(self._jobs):
-            created = time.strftime("%H:%M:%S", time.localtime(float(job.get("created_at", time.time()))))
-            elapsed_val = job.get("elapsed")
-            if elapsed_val is None and job.get("status") == "Running":
-                started = job.get("started_at")
-                elapsed_val = (time.time() - float(started)) if started else None
-
-            values = [
-                str(job.get("id", "")),
-                str(job.get("status", "")),
-                self._summarize_models(list(job.get("selected_models", []))),
-                self._format_cv_label(str(job.get("cv_mode", "repeated")), int(job.get("cv_folds", 5))),
-                created,
-                self._format_duration(float(elapsed_val)) if elapsed_val is not None else "--",
-                str(job.get("message", "")),
-            ]
-
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(val)
-                if col == 1:
-                    item.setForeground(status_colors.get(str(job.get("status", "")), QColor("#2E4D67")))
-                tbl.setItem(row, col, item)
-
+        prev_signals = tbl.blockSignals(True)
+        prev_updates = None
         try:
-            tbl.resizeColumnsToContents()
-        except Exception:
-            pass
-        tbl.setSortingEnabled(True)
+            tbl.setSortingEnabled(False)
+            try:
+                prev_updates = tbl.updatesEnabled()
+                tbl.setUpdatesEnabled(False)
+            except Exception:
+                prev_updates = None
+
+            tbl.setRowCount(len(self._jobs))
+            status_colors = {
+                "Queued": QColor("#2E4D67"),
+                "Running": QColor("#125284"),
+                "Completed": QColor("#1E633B"),
+                "Failed": QColor("#8D1E1E"),
+                "Cancelled": QColor("#8A6200"),
+            }
+
+            for row, job in enumerate(self._jobs):
+                created = time.strftime(
+                    "%H:%M:%S", time.localtime(float(job.get("created_at", time.time())))
+                )
+                elapsed_val = job.get("elapsed")
+                if elapsed_val is None and job.get("status") == "Running":
+                    started = job.get("started_at")
+                    elapsed_val = (time.time() - float(started)) if started else None
+
+                values = [
+                    str(job.get("id", "")),
+                    str(job.get("status", "")),
+                    self._summarize_models(list(job.get("selected_models", []))),
+                    self._format_cv_label(str(job.get("cv_mode", "repeated")), int(job.get("cv_folds", 5))),
+                    created,
+                    self._format_duration(float(elapsed_val)) if elapsed_val is not None else "--",
+                    str(job.get("message", "")),
+                ]
+
+                for col, val in enumerate(values):
+                    item = QTableWidgetItem(val)
+                    if col == 1:
+                        item.setForeground(
+                            status_colors.get(str(job.get("status", "")), QColor("#2E4D67"))
+                        )
+                    tbl.setItem(row, col, item)
+
+            try:
+                tbl.resizeColumnsToContents()
+            except Exception:
+                LOGGER.exception("Failed to resize columns in jobs UI")
+        finally:
+            try:
+                tbl.setSortingEnabled(True)
+            except Exception:
+                pass
+            try:
+                if prev_updates is not None:
+                    tbl.setUpdatesEnabled(prev_updates)
+            except Exception:
+                pass
+            tbl.blockSignals(prev_signals)
+
         self._refresh_feedback_context()
         self._save_recovery_checkpoint()
 
@@ -1446,7 +1564,8 @@ class MLTrainerApp(QMainWindow):
             self._sync_menu_actions()
             return
 
-        self._apply_job_to_controls(next_job)
+        # SSOT Fix: Stop applying job metadata back to UI controls!
+        # Just launch it directly from the job dict without overriding user's active screen
         self._launch_job_id = int(next_job.get("id"))
         self._on_train()
 
@@ -2056,7 +2175,7 @@ class MLTrainerApp(QMainWindow):
             settings.setValue("recovery/checkpointJson", json.dumps(payload, ensure_ascii=False))
             settings.setValue("recovery/checkpointAt", int(payload["saved_at"]))
         except Exception:
-            pass
+            LOGGER.exception("Failed to save recovery checkpoint")
 
     def _load_recovery_checkpoint(self):
         settings = QSettings()
@@ -2594,12 +2713,12 @@ class MLTrainerApp(QMainWindow):
         try:
             self._fill_table(c.metrics_table, metrics_df)
         except Exception:
-            pass
+            LOGGER.exception("Table fill failed for metrics_table")
         if stats_summary_df is not None:
             try:
                 self._fill_table(c.stats_table, stats_summary_df)
             except Exception:
-                pass
+                LOGGER.exception("Table fill failed for stats_table")
 
         run_dir = ""
         persist_outputs = False
@@ -3348,7 +3467,21 @@ class MLTrainerApp(QMainWindow):
 
     def _on_train(self):
         c = self.controls
-        request = self._collect_training_request()
+        
+        # SSOT Queue Execution: If launching a queued job, bypass current UI state!
+        if getattr(self, "_launch_job_id", None) is not None:
+            queued_job = self._job_by_id(self._launch_job_id)
+            if queued_job:
+                request = {
+                    "selected_models": queued_job.get("selected_models", []),
+                    "selected_plots": queued_job.get("selected_plots", []),
+                    "cv_mode": queued_job.get("cv_mode", "repeated"),
+                    "cv_folds": queued_job.get("cv_folds", 5),
+                }
+            else:
+                request = self._collect_training_request()
+        else:
+            request = self._collect_training_request()
         if request is None:
             self._launch_job_id = None
             return
@@ -3469,8 +3602,8 @@ class MLTrainerApp(QMainWindow):
         self._shap_map = {}
         self._figure_records = []
         self._shap_records = []
-        c.metrics_table.clear(); c.metrics_table.setRowCount(0); c.metrics_table.setColumnCount(0)
-        c.stats_table.clear(); c.stats_table.setRowCount(0); c.stats_table.setColumnCount(0)
+        self._clear_table(c.metrics_table)
+        self._clear_table(c.stats_table)
         c.figures_img.clear(); c.shap_img.clear()
         if hasattr(c, "figures_list"):
             c.figures_list.clear()
@@ -3530,40 +3663,37 @@ class MLTrainerApp(QMainWindow):
         from utils.paths import make_run_id
         run_id = make_run_id(prefix=f"job{active_job['id']}_{dataset_label}")
 
-        class TrainWorker(QObject):
-            finished = pyqtSignal(object, object, object, object, object, float)
-            error = pyqtSignal(str)
-            progress = pyqtSignal(int, int)
-            plot_progress = pyqtSignal(int, int)
-            log = pyqtSignal(str)
+        # Read SHAP settings once in the UI thread (core runner must stay Qt-free)
+        try:
+            qsettings = QSettings()
+            shap_settings = {
+                "top_n": qsettings.value("shap/top_n", -1),
+                "var_enabled": qsettings.value("shap/var_enabled", "false"),
+                "var_thresh": qsettings.value("shap/var_thresh", ""),
+                "always_include": qsettings.value("shap/always_include", ""),
+            }
+        except Exception:
+            shap_settings = {}
 
-            def run(self):
-                import time
-                t0 = time.time()
-                try:
-                    metrics_df, fitted_models, stats_df, stats_summary_df, out_info = run_training(
-                        effective_state,
-                        selected_models,
-                        selected_plots,
-                        cv_mode=cv_mode,
-                        cv_folds=cv_folds,
-                        external_progress_cb=self.progress.emit,
-                        external_plot_progress_cb=self.plot_progress.emit,
-                        external_log_cb=self.log.emit,
-                        should_cancel=lambda: getattr(app, '_cancelled', False),
-                        run_id=run_id,
-                        dataset_label=dataset_label,
-                        persist_outputs=persist_outputs,
-                        feature_value_labels=feature_value_labels,
-                    )
-                    elapsed = time.time() - t0
-                    self.finished.emit(metrics_df, fitted_models, stats_df, stats_summary_df, out_info, elapsed)
-                except Exception as e:
-                    self.error.emit(str(e))
-
-        self._thread = QThread()
-        self._worker = TrainWorker()
+        # Safe cleanup of any previous dead thread to plug memory leaks
+        if getattr(self, '_thread', None) is not None:
+            self._thread.quit()
+            self._thread.wait()
+            self._thread.deleteLater()
+        if getattr(self, '_worker', None) is not None:
+            self._worker.deleteLater()
+        
+        self._thread = QThread(self)
+        self._worker = _TrainWorker(
+            effective_state, selected_models, selected_plots, cv_mode, cv_folds,
+            lambda: getattr(self, '_cancelled', False),
+            run_id, dataset_label, persist_outputs, feature_value_labels, shap_settings
+        )
         self._worker.moveToThread(self._thread)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.error.connect(self._worker.deleteLater)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._update_progress)
         self._worker.plot_progress.connect(self._update_plot_progress)
@@ -3597,7 +3727,7 @@ class MLTrainerApp(QMainWindow):
                 if hasattr(c, "results_tabs"):
                     c.results_tabs.setCurrentIndex(0)
             except Exception:
-                pass
+                LOGGER.exception("Failed to render results from training run")
 
             self._thread.quit()
             self._thread.wait()
@@ -3616,7 +3746,7 @@ class MLTrainerApp(QMainWindow):
                     if c.plot_progress_bar.maximum() > 0 else "0/0 (0%)"
                 )
             except Exception:
-                pass
+                LOGGER.exception("Failed updating completion UI")
 
             running_job = self._job_by_id(self._active_job_id)
             if running_job is not None:
@@ -3789,12 +3919,8 @@ class MLTrainerApp(QMainWindow):
             c.shap_list.clear()
         self._refresh_figure_filter_options()
         self._refresh_shap_filter_options()
-        c.metrics_table.clear()
-        c.metrics_table.setRowCount(0)
-        c.metrics_table.setColumnCount(0)
-        c.stats_table.clear()
-        c.stats_table.setRowCount(0)
-        c.stats_table.setColumnCount(0)
+        self._clear_table(c.metrics_table)
+        self._clear_table(c.stats_table)
 
         c.kpi_dataset_value.setText(tr("status.kpi.not_loaded", default="Not loaded"))
         c.kpi_target_value.setText(tr("status.kpi.not_selected", default="Not selected"))
@@ -3958,46 +4084,30 @@ class MLTrainerApp(QMainWindow):
         self._capture_snapshot(clear_redo=True)
 
     def _fill_table(self, table, df: pd.DataFrame):
-        if df is None or df.empty:
-            table.clear()
-            table.setRowCount(0)
-            table.setColumnCount(0)
-            return
-
-        def _format_cell(value):
-            try:
-                if pd.isna(value):
-                    return "-"
-            except Exception:
-                pass
-            try:
-                if isinstance(value, int):
-                    return f"{int(value)}"
-            except Exception:
-                pass
-            try:
-                if isinstance(value, float):
-                    abs_val = abs(float(value))
-                    if abs_val >= 1000:
-                        return f"{float(value):,.2f}"
-                    if abs_val >= 1:
-                        return f"{float(value):.4f}"
-                    return f"{float(value):.6f}"
-            except Exception:
-                pass
-            return str(value)
-
-        cols = list(df.columns)
-        table.setColumnCount(len(cols))
-        table.setHorizontalHeaderLabels([str(c) for c in cols])
-        table.setRowCount(len(df))
-        for i in range(len(df)):
-            for j, col in enumerate(cols):
-                val = df.iloc[i][col]
-                from PyQt6.QtWidgets import QTableWidgetItem
-                item = QTableWidgetItem(_format_cell(val))
-                table.setItem(i, j, item)
-        table.resizeColumnsToContents()
+        """Feed a table with MVC architecture to avoid UI freezing."""
+        from interface.widgets.models import PandasTableModel
+        try:
+            if df is None or df.empty:
+                if hasattr(table, "setModel"):
+                    table.setModel(None)
+                elif hasattr(table, "clear"):
+                    table.clear()
+                    table.setRowCount(0)
+                    table.setColumnCount(0)
+                return
+            
+            # Using QAbstractTableModel specifically to prevent UI freezing
+            # caused by manual QTableWidgetItem loops! (MVC over GUI widgets)
+            model = PandasTableModel(df, parent=table)
+            
+            if hasattr(table, "setModel"):
+                table.setModel(model)
+                if hasattr(table, "resizeColumnsToContents"):
+                    table.resizeColumnsToContents()
+            else:
+                LOGGER.error("Cannot fill table: Does not support MVC setModel")
+        except Exception as e:
+            LOGGER.error(f"Failed to populate MVC table with dataframe: {e}", exc_info=True)
 
 
 def run_app():
@@ -4019,22 +4129,30 @@ def run_app():
     except Exception:
         pass
 
-    # Set global font to support Turkish characters
+    # Set global font (macOS uses system font; Windows/Linux fall back to Segoe UI).
     from PyQt6.QtGui import QFont
-    app.setFont(QFont("Segoe UI", 10))
+    if sys.platform == "darwin":
+        try:
+            app.setFont(QFont(".AppleSystemUIFont", 10))
+        except Exception:
+            pass
+    else:
+        app.setFont(QFont("Segoe UI", 10))
     # Set application icon
     proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     icon_path = os.path.join(proj_root, 'images', 'fau.png')
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
-    app.setStyle("Fusion")
-    pal = QPalette()
-    pal.setColor(QPalette.ColorRole.Window, QColor("#EEF2F6"))
-    pal.setColor(QPalette.ColorRole.Base, QColor("#FFFFFF"))
-    pal.setColor(QPalette.ColorRole.WindowText, QColor("#18212B"))
-    pal.setColor(QPalette.ColorRole.Button, QColor("#FFFFFF"))
-    pal.setColor(QPalette.ColorRole.Highlight, QColor("#005EA8"))
-    app.setPalette(pal)
+    # Avoid forcing a non-native palette on macOS.
+    if sys.platform != "darwin":
+        app.setStyle("Fusion")
+        pal = QPalette()
+        pal.setColor(QPalette.ColorRole.Window, QColor("#EEF2F6"))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#18212B"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#005EA8"))
+        app.setPalette(pal)
 
     # show splash/startup
     try:

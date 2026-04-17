@@ -5,9 +5,14 @@ Outputs:
 - validation_compare/tables/cv_summary_stats.tex (LaTeX table)
 """
 import os
+from utils.paths import EVALUATION_DIR
 import glob
 import pandas as pd
 import numpy as np
+
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.path.join(ROOT, 'validation_compare')
@@ -16,7 +21,7 @@ STRATS = ['kfold', 'repeated', 'nested']
 
 
 def _read_cv(strategy: str) -> pd.DataFrame:
-    pattern = os.path.join(BASE, strategy, '*_output*', '1_Overall_Evaluation', 'cv_splits.xlsx')
+    pattern = os.path.join(BASE, strategy, '*_output*', EVALUATION_DIR, 'cv_splits.xlsx')
     files = sorted(glob.glob(pattern))
     if not files:
         return pd.DataFrame(columns=['R2','RMSE','MAE'])
@@ -25,6 +30,9 @@ def _read_cv(strategy: str) -> pd.DataFrame:
         xls = pd.ExcelFile(path)
         df = pd.read_excel(xls, xls.sheet_names[0])
     except Exception:
+        LOGGER.exception("Failed reading CV splits workbook: %s", path)
+        return pd.DataFrame(columns=['R2','RMSE','MAE'])
+    
     out = pd.DataFrame({
         'R2': pd.to_numeric(df.get('R2', pd.Series([], dtype=float)), errors='coerce'),
         'RMSE': pd.to_numeric(df.get('RMSE', pd.Series([], dtype=float)), errors='coerce'),

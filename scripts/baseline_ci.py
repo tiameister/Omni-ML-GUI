@@ -7,7 +7,7 @@ Outputs:
 from __future__ import annotations
 
 import os
-import json
+from utils.paths import EVALUATION_DIR
 from typing import Tuple
 
 import numpy as np
@@ -15,6 +15,10 @@ import pandas as pd
 from sklearn.dummy import DummyRegressor
 from sklearn.model_selection import cross_val_predict, KFold
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 try:
@@ -27,7 +31,7 @@ except Exception:
 
 OUTDIR = str(os.environ.get("MLTRAINER_RUN_ROOT", "")).strip()
 if OUTDIR and os.path.exists(OUTDIR):
-    OUTDIR = os.path.join(OUTDIR, "1_Overall_Evaluation", "baseline")
+    OUTDIR = os.path.join(OUTDIR, EVALUATION_DIR, "baseline")
 else:
     OUTDIR = os.path.join(ROOT, OUTPUT_ROOT, 'baseline')
 os.makedirs(OUTDIR, exist_ok=True)
@@ -63,11 +67,11 @@ def main():
                     best_model = str(manifest.get('best_model') or '').strip()
                     if best_model:
                         return manifest
-                except Exception:
-                    pass
+                except Exception as e:
+                    LOGGER.exception("Failed reading run manifest: %s", manifest_path)
 
             for m_name in ('metrics.xlsx', 'feature_engineering_metrics.xlsx'):
-                metrics_xlsx = os.path.join(run_root, '1_Overall_Evaluation', m_name)
+                metrics_xlsx = os.path.join(run_root, EVALUATION_DIR, m_name)
                 if os.path.exists(metrics_xlsx):
                     try:
                         mdf = pd.read_excel(metrics_xlsx, sheet_name=0)
@@ -82,16 +86,16 @@ def main():
                                         if 'features' in sel_data:
                                             meta['features'] = sel_data['features']
                                 return meta
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        LOGGER.exception("Failed reading metrics workbook: %s", metrics_xlsx)
 
             sel = os.path.join(run_root, '0_Feature_Selection', 'feature_selection_meta.json')
             if os.path.exists(sel):
                 try:
                     with open(sel, 'r', encoding='utf-8') as f:
                         return json.load(f)
-                except Exception:
-                    pass
+                except Exception as e:
+                    LOGGER.exception("Failed reading feature selection meta: %s", sel)
 
         metas = []
         out_root = os.path.join(ROOT, OUTPUT_ROOT)

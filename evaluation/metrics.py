@@ -4,7 +4,7 @@ from typing import List
 from sklearn.pipeline import Pipeline
 from sklearn.inspection import permutation_importance
 
-from utils.helpers import save_bar
+from utils.plotting_helpers import save_bar
 from utils.logger import get_logger
 import numpy as np
 
@@ -56,13 +56,13 @@ def save_model_metrics(outdir: str, metrics_df: pd.DataFrame, filename_prefix: s
             best_r2 = float(publication_view["R2_CV"].max())
             publication_view["delta_R2_vs_best"] = publication_view["R2_CV"].astype(float) - best_r2
         except Exception:
-            pass
+            LOGGER.exception("Failed to compute delta_R2_vs_best")
     if "RMSE_CV" in publication_view.columns:
         try:
             best_rmse = float(publication_view["RMSE_CV"].min())
             publication_view["delta_RMSE_vs_best"] = publication_view["RMSE_CV"].astype(float) - best_rmse
         except Exception:
-            pass
+            LOGGER.exception("Failed to compute delta_RMSE_vs_best")
 
     preferred_cols = [
         "rank_by_R2",

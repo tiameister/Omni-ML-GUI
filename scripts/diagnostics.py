@@ -9,11 +9,15 @@ Outputs:
 from __future__ import annotations
 
 import os
+from utils.paths import EVALUATION_DIR
 import json
-import numpy as np
 import pandas as pd
 from statsmodels.stats.diagnostic import het_breuschpagan
 import statsmodels.api as sm
+
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_ROOT = str(os.environ.get('MLTRAINER_RUN_ROOT', '') or '').strip()
@@ -29,7 +33,7 @@ except Exception:
 if ANALYSIS_ROOT:
     OUTDIR = os.path.join(ANALYSIS_ROOT, '2_Model_Diagnostics')
 elif RUN_ROOT and os.path.isdir(RUN_ROOT):
-    OUTDIR = os.path.join(RUN_ROOT, '1_Overall_Evaluation', '2_Model_Diagnostics')
+    OUTDIR = os.path.join(RUN_ROOT, EVALUATION_DIR, '2_Model_Diagnostics')
 else:
     OUTDIR = os.path.join(ROOT, OUTPUT_ROOT, '2_Model_Diagnostics')
 os.makedirs(OUTDIR, exist_ok=True)
@@ -45,12 +49,12 @@ def load_best_meta():
                 best_model = str(manifest.get('best_model') or '').strip()
                 if best_model:
                     return manifest
-            except Exception:
-                pass
+            except Exception as e:
+                LOGGER.exception("Failed reading run manifest: %s", manifest_path)
 
         # Check both potential metrics file names
         for m_name in ('metrics.xlsx', 'feature_engineering_metrics.xlsx'):
-            metrics_xlsx = os.path.join(RUN_ROOT, '1_Overall_Evaluation', m_name)
+            metrics_xlsx = os.path.join(RUN_ROOT, EVALUATION_DIR, m_name)
             if os.path.exists(metrics_xlsx):
                 try:
                     mdf = pd.read_excel(metrics_xlsx, sheet_name=0)
@@ -66,8 +70,8 @@ def load_best_meta():
                                     if 'features' in sel_data:
                                         meta['features'] = sel_data['features']
                             return meta
-                except Exception:
-                    pass
+                except Exception as e:
+                    LOGGER.exception("Failed reading metrics workbook: %s", metrics_xlsx)
 
         # Fallback to feature_selection_meta.json if manifest/metrics didn't work but we have RUN_ROOT
         sel = os.path.join(RUN_ROOT, '0_Feature_Selection', 'feature_selection_meta.json')
@@ -75,8 +79,8 @@ def load_best_meta():
             try:
                 with open(sel, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except Exception:
-                pass
+            except Exception as e:
+                LOGGER.exception("Failed reading feature selection meta: %s", sel)
 
     # find latest feature_selection_meta.json under OUTPUT_ROOT or validation_compare
     metas = []

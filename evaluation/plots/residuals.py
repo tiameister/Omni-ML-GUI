@@ -37,11 +37,24 @@ def plot_residuals(
     try:
         preds = pipe.predict(X)
         resid = y - preds
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.scatter(preds, resid, s=30, alpha=0.5, c='tab:blue', edgecolor='none')
-        sns.kdeplot(x=preds, y=resid, levels=5, color='black', linewidths=1, alpha=0.5, ax=ax)
-        ax.axhline(0, color='red', linestyle='--', linewidth=1)
+        
+        # Calculate true statistics before sampling plot rendering
         mu, sigma = resid.mean(), resid.std()
+        
+        # ML pipeline optimization: Downsample massive scatter/KDE layers to prevent memory explosion & viewer crashes
+        if len(resid) > 5000:
+            idx = np.random.RandomState(42).choice(len(resid), size=5000, replace=False)
+            plot_preds = np.asarray(preds)[idx]
+            plot_resid = np.asarray(resid)[idx]
+        else:
+            plot_preds = preds
+            plot_resid = resid
+            
+        fig, ax = plt.subplots(figsize=(8, 6))
+        # rasterized=True prevents SVG/PDF engines from freezing on millions of paths
+        ax.scatter(plot_preds, plot_resid, s=30, alpha=0.5, c='tab:blue', edgecolor='none', rasterized=True)
+        sns.kdeplot(x=plot_preds, y=plot_resid, levels=5, color='black', linewidths=1, alpha=0.5, ax=ax)
+        ax.axhline(0, color='red', linestyle='--', linewidth=1)
         text = f'Mean={mu:.2f}\nStd={sigma:.2f}'
         ax.text(0.95, 0.95, text, transform=ax.transAxes,
                 ha='right', va='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.7))

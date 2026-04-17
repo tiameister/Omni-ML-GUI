@@ -42,7 +42,7 @@ def plot_learning_curve(
     os.makedirs(out_eval, exist_ok=True)
     try:
         train_sizes, train_scores, cv_scores = learning_curve(
-            pipe, X, y, cv=5, scoring='r2', n_jobs=1,
+            pipe, X, y, cv=5, scoring='r2', n_jobs=-1,
             train_sizes=[0.1, 0.33, 0.55, 0.78, 1.0]
         )
         train_mean = train_scores.mean(axis=1)

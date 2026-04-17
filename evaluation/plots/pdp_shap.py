@@ -55,7 +55,7 @@ def _save_fig_formats(fig_path_base: str):
 from string import capwords as _capwords
 # Centralized quote/backtick normalization
 try:
-    from utils.helpers import normalize_quotes_ascii as _qascii
+    from utils.text import normalize_quotes_ascii as _qascii
 except Exception:
     def _qascii(s: str) -> str:
         return str(s)
@@ -150,11 +150,15 @@ def generate_pdp(best_model_name: str, best_pipe, X, top_features: list, outdir:
         X = X.copy().astype(float)
         for feat in top_features:
             plt.figure(figsize=(6, 4))
-            PartialDependenceDisplay.from_estimator(best_pipe, X, [feat], grid_resolution=40, n_jobs=1)
+            PartialDependenceDisplay.from_estimator(best_pipe, X, [feat], grid_resolution=40, n_jobs=-1)
             plt.title(f"PDP - {best_model_name} - {feat}")
             plt.tight_layout()
             safe = re.sub(r"[^a-zA-Z0-9_]+", "_", feat)
-            plt.savefig(os.path.join(out_expl, f"{best_model_name}_PDP_{safe}.png", bbox_inches="tight"), dpi=160)
+            plt.savefig(
+                os.path.join(out_expl, f"{best_model_name}_PDP_{safe}.png"),
+                bbox_inches="tight",
+                dpi=160,
+            )
             plt.close()
     except Exception as e:
         with open(os.path.join(out_expl, "pdp_warning.txt"), "w", encoding="utf-8") as f:
@@ -167,11 +171,29 @@ def _compute_shap(best_pipe, X, num_cols, cat_cols, seed: int = 42, cancel_cb=No
     X_proc = best_pipe.named_steps["prep"].transform(X)
     _raise_if_cancelled(cancel_cb)
     model_obj = best_pipe.named_steps["model"]
-    explainer = shap.Explainer(model_obj, X_proc)
     n_sample = min(500, X_proc.shape[0])
     idx = np.random.RandomState(seed).choice(X_proc.shape[0], size=n_sample, replace=False)
     Xs = X_proc[idx]
-    shap_output = explainer(Xs)
+    
+    # ML Pipeline Optimization: Fast TreeExplainer for ensemble models (O(1) background), 
+    # and downsampled background for Exact/Kernel explainers to prevent GUI freeze.
+    model_name = model_obj.__class__.__name__
+    is_tree = any(t in model_name for t in ("RandomForest", "GradientBoosting", "XGB", "HistGradientBoosting", "Tree"))
+    
+    explainer = None
+    if is_tree:
+        try:
+            explainer = shap.TreeExplainer(model_obj)
+            shap_output = explainer(Xs)
+        except Exception:
+            explainer = None
+            
+    if explainer is None:
+        # Prevent massive background datasets from crashing ExactExplainer
+        bg_size = min(100, X_proc.shape[0])
+        bg = X_proc[np.random.RandomState(seed).choice(X_proc.shape[0], size=bg_size, replace=False)]
+        explainer = shap.Explainer(model_obj, bg)
+        shap_output = explainer(Xs)
     _raise_if_cancelled(cancel_cb)
     if hasattr(shap_output, 'values'):
         shap_values = shap_output.values
@@ -279,7 +301,7 @@ def generate_shap_summary(
             Xs_vals = Xs[:, top_idx]
         # Normalize quotes in feature names to avoid rendering issues
         try:
-            from utils.helpers import normalize_quotes_ascii as _qascii
+            from utils.text import normalize_quotes_ascii as _qascii
             sel_pretty_plot = [_qascii(n) for n in sel_pretty]
         except Exception:
             sel_pretty_plot = sel_pretty
@@ -312,7 +334,7 @@ def generate_shap_summary(
         bar_w = min(12.5, max(6.4, 5.6 + 0.04 * max_label_len))
         plt.figure(figsize=(bar_w, bar_h))
         try:
-            from utils.helpers import normalize_quotes_ascii as _qascii
+            from utils.text import normalize_quotes_ascii as _qascii
             sel_pretty_bar = [_qascii(n) for n in sel_pretty]
         except Exception:
             sel_pretty_bar = sel_pretty

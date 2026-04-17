@@ -1,6 +1,5 @@
 from typing import List, Tuple
 
-import pandas as pd
 from utils.text import normalize_text as _norm
 
 

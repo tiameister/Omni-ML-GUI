@@ -22,6 +22,9 @@ from interface.widgets.checkboxes import (
 )
 from utils.localization import tr
 from utils.text import normalize_quotes_ascii as _qascii
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 # Small helpers to persist/restore dialog geometry consistently
 def _restore_geometry(widget: QDialog, key: str) -> None:
@@ -31,7 +34,7 @@ def _restore_geometry(widget: QDialog, key: str) -> None:
         if ba:
             widget.restoreGeometry(ba)
     except Exception:
-        pass
+        LOGGER.exception("Dialog geometry restore failed (%s)", key)
 
 
 def _save_geometry(widget: QDialog, key: str) -> None:
@@ -41,9 +44,9 @@ def _save_geometry(widget: QDialog, key: str) -> None:
         try:
             s.sync()
         except Exception:
-            pass
+            LOGGER.exception("Dialog settings sync failed (%s)", key)
     except Exception:
-        pass
+        LOGGER.exception("Dialog geometry save failed (%s)", key)
 
 class DataPreviewDialog(QDialog):
     def __init__(self, df, parent=None):
@@ -163,7 +166,7 @@ class ColumnSelectionDialog(QDialog):
                         self.target.setCurrentIndex(i)
                         break
             except Exception:
-                pass
+                LOGGER.exception("Failed to preselect initial target")
         lay.addWidget(self.target)
 
         # Features header row with filter
@@ -690,7 +693,7 @@ class PlotSelectionDialog(QDialog):
             try:
                 self.settings.sync()
             except Exception:
-                pass
+                LOGGER.exception("PlotSelectionDialog settings sync failed")
         except Exception:
             # Do not block closing on settings errors
             pass
@@ -826,14 +829,14 @@ class ShapSettingsDialog(QDialog):
                 try:
                     self.topn_spin.setValue(int(topn))
                 except Exception:
-                    pass
+                    LOGGER.exception("Invalid SHAP top_n setting")
             var_enabled = str(settings.value('shap/var_enabled', 'false')).lower() in ("true","1","yes")
             self.var_chk.setChecked(var_enabled)
             if var_enabled:
                 try:
                     self.var_spin.setValue(float(settings.value('shap/var_thresh', 1e-8)))
                 except Exception:
-                    pass
+                    LOGGER.exception("Invalid SHAP var_thresh setting")
             else:
                 self.var_spin.setEnabled(False)
             self.include_edit.setText(str(settings.value('shap/always_include', '') or ''))
@@ -914,7 +917,7 @@ class ShapSettingsDialog(QDialog):
         try:
             s.sync()
         except Exception:
-            pass
+            LOGGER.exception("SHAP settings sync failed")
         # Save geometry and close
         _save_geometry(self, 'dialogs/ShapSettings/geometry')
         self.accept()
@@ -1715,7 +1718,7 @@ class PublicationExportDialog(QDialog):
             if isinstance(data, dict):
                 return data
         except Exception:
-            pass
+            LOGGER.exception("Failed to load social science mapping")
         return {}
 
     @staticmethod

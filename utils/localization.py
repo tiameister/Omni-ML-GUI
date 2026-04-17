@@ -6,15 +6,17 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+def _flatten_dict(d: dict, parent_key: str = '', sep: str = '.') -> dict:
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(_flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, str(v)))
+    return dict(items)
+
 class LocalizationManager:
-    """
-    Enterprise-grade i18n yöneticisi (Singleton).
-    Tıpkı VS Code, IntelliJ gibi yazılımların çalıştığı standartlarda;
-    - Metinleri koddan ayırıp dışarıdan (JSON) okur (Lazy Loading).
-    - Namespace mantığını destekler ("ui.buttons.ok" gibi . (nokta) notasyonu).
-    - OS Sistem dilini algılama özelliği mevcuttur.
-    - İngilizceyi her zaman çekirdek fallback (geri dönüş) dili olarak tutar.
-    """
     _instance = None
 
     def __new__(cls):
@@ -31,63 +33,55 @@ class LocalizationManager:
         self.fallback_translations = {} 
         self._callbacks = []
         
-        # Sistemi ayağa kaldırırken varsayılan İngilizceyi Fallback olarak yükle
         self._load_fallback()
-        
-        # Kullanıcının varsayılan işletim sistemi dilini tespit et
         self._detect_system_language()
 
     def _load_fallback(self):
-        """Öncelikli olarak sistemi kurtaracak olan temel(İngilizce) dili yükler."""
         fallback_path = self.locales_dir / "en.json"
         if fallback_path.exists():
             try:
                 with open(fallback_path, 'r', encoding='utf-8') as f:
-                    self.fallback_translations = json.load(f)
+                    self.fallback_translations = _flatten_dict(json.load(f))
             except Exception as e:
-                logger.error(f"Fallback dili yüklenemedi: {e}")
+                logger.error(f"Fallback dili yüklenemedi: {e}", exc_info=True)
 
     def _detect_system_language(self):
-        """İşletim sisteminin dil kodunu okuyup uygun olanı yükler (Örn: 'tr_TR' -> 'tr')"""
         try:
             sys_lang, _ = locale.getdefaultlocale()
             if sys_lang:
-                lang_prefix = sys_lang.split('_')[0].lower() # 'tr_TR' -> 'tr'
+                lang_prefix = str(sys_lang).split('_')[0].lower()
                 if (self.locales_dir / f"{lang_prefix}.json").exists():
                     self.set_language(lang_prefix)
                     return
         except Exception as e:
-            logger.warning(f"Sistem dili tespit edilemedi: {e}")
+            logger.warning(f"Sistem dili tespit edilemedi: {e}", exc_info=True)
             
-        # Eğer özel bir tespit yapılamazsa İngilizce'ye geç
         self.set_language('en')
 
     def set_language(self, lang_code: str) -> bool:
-        """Sadece çağırılan dili okuyarak (Lazy Load) belleği gereksiz yere şişirmeyi engeller."""
+        if self.current_language == lang_code and self.translations:
+            return True
+            
         file_path = self.locales_dir / f"{lang_code}.json"
-        
         if not file_path.exists():
-            logger.error(f"Dil desteklenmiyor veya dosya eksik: {file_path}")
             return False
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                self.translations = json.load(f)
+                self.translations = _flatten_dict(json.load(f))
             
             self.current_language = lang_code
             logger.info(f"Dil '{lang_code}' olarak değiştirildi.")
             self._notify_listeners()
             return True
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Dil dosyasında sözdizimi(syntax) hatası: {file_path} - {e}")
+        except Exception as e:
+            logger.error(f"Dil dosyasi yuklenemedi: {file_path}", exc_info=True)
             return False
 
     def get_language(self) -> str:
         return self.current_language
 
     def get_supported_languages(self) -> list[str]:
-        """Return available language codes from the locales directory."""
         try:
             codes = [p.stem for p in self.locales_dir.glob("*.json") if p.is_file()]
             return sorted(set(codes))
@@ -95,44 +89,23 @@ class LocalizationManager:
             return ["en"]
 
     def tr(self, key_path: str, default: Optional[str] = None, **kwargs) -> str:
-        """
-        Nokta notasyonlu ('ui.buttons.ok' gibi) gelen anahtarı okur.
-        1- Seçili dilde (örn. TR) arar.
-        2- Bulamazsa, Fallback'te (EN) arar.
-        3- Orada da yoksa geliştiricinin fark etmesi için anahtarın kendisini raw "[key_path]" olarak döndürür.
-        """
-        text = self._get_nested_value(key_path, self.translations)
+        text = self.translations.get(key_path)
         
-        # Seçili dilde bulunamadıysa fallback(İngilizce) dosyasına bak
         if text is None:
-            text = self._get_nested_value(key_path, self.fallback_translations)
+            text = self.fallback_translations.get(key_path)
             if text is None:
-                logger.warning(f"Eksik çeviri anahtarı: '{key_path}'")
                 if default is not None:
                     text = default
                 else:
                     return f"[{key_path}]"
         
-        # Eğer içerikte '{param}' gibi dinamik değerler varsa, yerleştir
-        if kwargs and isinstance(text, str):
+        if kwargs:
             try:
                 return text.format(**kwargs)
-            except KeyError as e:
-                logger.error(f"'{key_path}' için format argümanı eksik: {e}")
+            except Exception:
                 return text
                 
         return text
-
-    def _get_nested_value(self, key_path: str, data: dict):
-        """'ui.buttons.ok' gibi içiçe geçmiş JSON anahtarlarını ayrıştırır."""
-        keys = key_path.split('.')
-        val = data
-        for k in keys:
-            if isinstance(val, dict) and k in val:
-                val = val[k]
-            else:
-                return None
-        return val
 
     def add_listener(self, callback):
         if callback not in self._callbacks:
@@ -147,8 +120,7 @@ class LocalizationManager:
             try:
                 callback()
             except Exception as e:
-                logger.error(f"Dil güncelleme tetikleyicisinde hata: {e}")
+                logger.error(f"Dil güncelleme tetikleyicisinde hata: {e}", exc_info=True)
 
-# Uygulama genelinde modülü başlatan singleton instance
 i18n = LocalizationManager()
 tr = i18n.tr

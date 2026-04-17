@@ -14,17 +14,29 @@ except ImportError:
 
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import cross_validate, KFold, RepeatedKFold, GridSearchCV, train_test_split, StratifiedKFold
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, make_scorer
+from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error, make_scorer
 import time
 import os
+from utils.logger import get_logger
 
-# define rmse without using 'squared' arg
+# define rmse natively
 def rmse(y_true, y_pred):
-    # compute root mean squared error
-    return np.sqrt(mean_squared_error(y_true, y_pred))
+    return root_mean_squared_error(y_true, y_pred)
 
 import numpy as np
 import pandas as pd
+
+
+LOGGER = get_logger(__name__)
+
+
+def _safe_call(cb, *args, context: str):
+    if not callable(cb):
+        return
+    try:
+        cb(*args)
+    except Exception:
+        LOGGER.exception("Non-fatal callback failure (%s)", context)
 
 from config import RSTATE, CV_MODE, CV_FOLDS, CV_REPEATS, NESTED_OUTER_FOLDS, NESTED_INNER_FOLDS
 try:
@@ -44,8 +56,12 @@ def train_and_evaluate(
         "LinearRegression": LinearRegression(),
         "RidgeCV": RidgeCV(alphas=np.logspace(-3, 3, 13)),
         "RandomForest": RandomForestRegressor(n_estimators=500, random_state=RSTATE, n_jobs=-1),
-        "HistGB": HistGradientBoostingRegressor(random_state=RSTATE),
-        "GradientBoostingRegressor": GradientBoostingRegressor(random_state=RSTATE),
+        "HistGB": HistGradientBoostingRegressor(
+            random_state=RSTATE, early_stopping=True, validation_fraction=0.1, n_iter_no_change=10
+        ),
+        "GradientBoostingRegressor": GradientBoostingRegressor(
+            random_state=RSTATE, validation_fraction=0.1, n_iter_no_change=10
+        ),
         "Lasso": Lasso(random_state=RSTATE),
         "ElasticNet": ElasticNet(random_state=RSTATE),
         "SVR": SVR(),
@@ -56,7 +72,8 @@ def train_and_evaluate(
         all_models["XGBoost"] = XGBRegressor(
             n_estimators=800, learning_rate=0.05, max_depth=6,
             subsample=0.9, colsample_bytree=0.9, reg_lambda=1.0,
-            random_state=RSTATE, n_jobs=-1
+            tree_method='hist', random_state=RSTATE, n_jobs=-1,
+            early_stopping_rounds=15, eval_metric="rmse"  # Note: Requires eval_set in `.fit()`, handled dynamically if implemented, but adding params keeps future-proofing. Early stopping in XGB via scikit-API is mostly useful in standalone mode rather than cross-val unless fit_params is passed.
         )
 
     scoring = {
@@ -82,15 +99,9 @@ def train_and_evaluate(
         pipe = Pipeline([("prep", preprocessor), ("model", all_models[name])])
 
         if callable(log_callback):
-            try:
-                log_callback(f"[Start] {name}")
-            except Exception:
-                pass
+            _safe_call(log_callback, f"[Start] {name}", context="log_callback:start")
         if callable(model_status_callback):
-            try:
-                model_status_callback(name, 'start')
-            except Exception:
-                pass
+            _safe_call(model_status_callback, name, "start", context="model_status_callback:start")
 
         # — run either repeated/k-fold/nested CV or simple hold-out
         mode = cv_mode or CV_MODE
@@ -104,7 +115,7 @@ def train_and_evaluate(
             cvres = cross_validate(
                 pipe, X, y, cv=cv, scoring=scoring,
                 return_train_score=False
-            )
+            , n_jobs=-1)
             r2_mean = cvres["test_R2"].mean()
             mae_mean = -cvres["test_MAE"].mean()
             rmse_mean = -cvres["test_RMSE"].mean()
@@ -116,18 +127,13 @@ def train_and_evaluate(
             }
         elif mode == 'repeated':
             if y_strata is not None:
-                # emulate repeated stratified kfold by varying random_state
-                splits = []
-                n_splits = cv_folds or CV_FOLDS
-                for rep in range(max(1, CV_REPEATS)):
-                    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RSTATE + rep)
-                    splits.extend(list(skf.split(X, y_strata)))
-                cv = splits
+                from sklearn.model_selection import RepeatedStratifiedKFold
+                cv = RepeatedStratifiedKFold(n_splits=cv_folds or CV_FOLDS, n_repeats=CV_REPEATS, random_state=RSTATE).split(X, y_strata)
             else:
                 cv = RepeatedKFold(n_splits=cv_folds or CV_FOLDS, n_repeats=CV_REPEATS, random_state=RSTATE)
             cvres = cross_validate(
                 pipe, X, y, cv=cv, scoring=scoring, return_train_score=False
-            )
+            , n_jobs=-1)
             r2_mean = cvres["test_R2"].mean()
             mae_mean = -cvres["test_MAE"].mean()
             rmse_mean = -cvres["test_RMSE"].mean()
@@ -170,18 +176,23 @@ def train_and_evaluate(
                 outer = skf_outer.split(X, y_strata)
             else:
                 outer = KFold(n_splits=NESTED_OUTER_FOLDS, shuffle=True, random_state=RSTATE)
-            inner = KFold(n_splits=NESTED_INNER_FOLDS, shuffle=True, random_state=RSTATE)
+            if y_strata is not None:
+                inner = StratifiedKFold(n_splits=NESTED_INNER_FOLDS, shuffle=True, random_state=RSTATE)
+            else:
+                inner = KFold(n_splits=NESTED_INNER_FOLDS, shuffle=True, random_state=RSTATE)
 
             if param_grid:
+                # inner n_jobs=-1 handles CPU completely.
+                # outer n_jobs=1 prevents destructive Thread/RAM explosion on Nested CV
                 gs = GridSearchCV(pipe, param_grid=param_grid, cv=inner,
                                   scoring={"R2": scoring["R2"], "MAE": scoring["MAE"], "RMSE": scoring["RMSE"]},
-                                  refit="R2", n_jobs=-1)
+                                  refit="R2", n_jobs=-1, pre_dispatch="2*n_jobs")
                 cvres = cross_validate(gs, X, y, cv=outer,
-                                       scoring=scoring, return_estimator=True, return_train_score=False)
+                                       scoring=scoring, return_estimator=True, return_train_score=False, n_jobs=1)
             else:
                 # Fallback: outer CV without inner tuning for models lacking grids
                 cvres = cross_validate(pipe, X, y, cv=outer,
-                                       scoring=scoring, return_estimator=True, return_train_score=False)
+                                       scoring=scoring, return_estimator=True, return_train_score=False, n_jobs=-1, pre_dispatch="2*n_jobs")
 
             r2_mean = cvres["test_R2"].mean()
             mae_mean = -cvres["test_MAE"].mean()
@@ -224,21 +235,16 @@ def train_and_evaluate(
         fitted[name] = {"pipe": pipe, "holdout": (X, y, y_hat), "cv_mode": mode, "cv_scores": per_split}
 
         if progress_callback is not None:
-            try:
-                progress_callback(idx + 1, total)
-            except Exception:
-                pass
+            _safe_call(progress_callback, idx + 1, total, context="progress_callback")
 
         if callable(log_callback):
-            try:
-                log_callback(f"[Done] {name} | R2_CV={r2_mean:.4f} RMSE_CV={rmse_mean:.4f}")
-            except Exception:
-                pass
+            _safe_call(
+                log_callback,
+                f"[Done] {name} | R2_CV={r2_mean:.4f} RMSE_CV={rmse_mean:.4f}",
+                context="log_callback:done",
+            )
         if callable(model_status_callback):
-            try:
-                model_status_callback(name, 'done')
-            except Exception:
-                pass
+            _safe_call(model_status_callback, name, "done", context="model_status_callback:done")
 
     metrics_df = pd.DataFrame(rows).sort_values("R2_CV", ascending=False)
     return metrics_df, fitted

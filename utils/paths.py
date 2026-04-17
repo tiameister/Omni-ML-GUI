@@ -118,3 +118,22 @@ def get_run_model_dir(run_root: Path, model_name: str) -> Path:
     # Instead of creating /models/model_name inside get_run_model_dir, we just return the run_root itself.
     # The individual scripts will append ModelName where appropriate.
     return ensure_directory(run_root)
+
+# Common predefined output folder names to avoid hardcoding across scripts
+EVALUATION_DIR = "1_Overall_Evaluation"
+FEATURE_IMP_DIR = "2_Feature_Importance"
+MANUSCRIPT_DIR = "3_Manuscript_Figures"
+MODELS_DIR = "models"
+EXPLAINABILITY_DIR = "explainability"
+
+def get_latest_output_matches(base_path: str, sub_dir: str, file_pattern: str) -> list[str]:
+    """Helper to find files in dynamic output folders (e.g. '*_output*')."""
+    import glob
+    import os
+    pattern = os.path.join(base_path, "*_output*", sub_dir, file_pattern)
+    return sorted(glob.glob(pattern))
+
+
+def ensure_outdir(p="output"):
+    os.makedirs(p, exist_ok=True)
+    return p

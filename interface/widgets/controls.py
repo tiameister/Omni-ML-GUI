@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import (
+    QTableView,
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QComboBox, QSpinBox, QCheckBox, QProgressBar, QTextEdit,
-    QTabWidget, QScrollArea, QTableWidget, QGroupBox, QFrame, QGridLayout, QListWidget,
-    QAbstractItemView, QListWidgetItem
+    QTabWidget, QScrollArea, QTableWidget, QFrame, QGridLayout, QListWidget, QAbstractItemView, QSizePolicy
 )
 from interface.widgets.checkboxes import create_model_checkboxes, create_plot_checkboxes
 from PyQt6.QtCore import Qt
@@ -260,8 +260,6 @@ def build_layout():
     w.preview_button.setMinimumWidth(92)
     w.preview_button.setEnabled(False)
     info_row.addWidget(w.data_info_label)
-    info_row.addStretch()
-    info_row.addWidget(w.preview_button)
     w.info_button = QPushButton("About / Guide")
     w.info_button.setObjectName("ghostButton")
     w.vars_button = QPushButton("Select Variables")
@@ -342,6 +340,7 @@ def build_layout():
 
     w.data_card = QFrame()
     w.data_card.setObjectName("workflowCard")
+    w.data_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     data_card_layout = QVBoxLayout(w.data_card)
     data_card_layout.setContentsMargins(24, 24, 24, 24)
     data_card_layout.setSpacing(8)
@@ -360,6 +359,7 @@ def build_layout():
     action_row = QHBoxLayout()
     action_row.addWidget(w.load_button)
     action_row.addStretch()
+    action_row.addWidget(w.preview_button)
     data_card_layout.addLayout(action_row)
     
     data_card_layout.addSpacing(12)
@@ -371,9 +371,11 @@ def build_layout():
     info_card_layout.addLayout(info_row)
     
     data_card_layout.addWidget(w.info_card)
+    data_card_layout.addStretch(1)
 
     w.config_card = QFrame()
     w.config_card.setObjectName("workflowCard")
+    w.config_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     config_card_layout = QVBoxLayout(w.config_card)
     config_card_layout.setContentsMargins(24, 24, 24, 24)
     config_card_layout.setSpacing(8)
@@ -417,9 +419,11 @@ def build_layout():
     config_summary_layout.addLayout(cv_layout)
     
     config_card_layout.addWidget(w.config_summary_card)
+    config_card_layout.addStretch(1)
 
     w.model_card = QFrame()
     w.model_card.setObjectName("workflowCard")
+    w.model_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     model_card_layout = QVBoxLayout(w.model_card)
     model_card_layout.setContentsMargins(24, 24, 24, 24)
     model_card_layout.setSpacing(8)
@@ -455,9 +459,11 @@ def build_layout():
     model_badge_layout.addWidget(w.model_summary_label)
     model_badge_layout.addStretch()
     model_card_layout.addWidget(w.model_badge_card)
+    model_card_layout.addStretch(1)
 
     w.run_card = QFrame()
     w.run_card.setObjectName("workflowCard")
+    w.run_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     run_card_layout = QVBoxLayout(w.run_card)
     run_card_layout.setContentsMargins(24, 24, 24, 24)
     run_card_layout.setSpacing(8)
@@ -474,7 +480,6 @@ def build_layout():
     run_card_layout.addSpacing(16)
 
     row_train = QHBoxLayout()
-    row_train.addWidget(w.train_button)
     row_train.setSpacing(12)
     row_train.addWidget(w.train_button)
     row_train.addWidget(w.cancel_button)
@@ -590,26 +595,22 @@ def build_layout():
     step_data = QWidget(); step_data_lay = QVBoxLayout(step_data)
     step_data_lay.setContentsMargins(0, 0, 0, 0)
     step_data_lay.setSpacing(8)
-    step_data_lay.addWidget(w.data_card)
-    step_data_lay.addStretch()
+    step_data_lay.addWidget(w.data_card, 1)
 
     step_config = QWidget(); step_config_lay = QVBoxLayout(step_config)
     step_config_lay.setContentsMargins(0, 0, 0, 0)
     step_config_lay.setSpacing(8)
-    step_config_lay.addWidget(w.config_card)
-    step_config_lay.addStretch()
+    step_config_lay.addWidget(w.config_card, 1)
 
     step_model = QWidget(); step_model_lay = QVBoxLayout(step_model)
     step_model_lay.setContentsMargins(0, 0, 0, 0)
     step_model_lay.setSpacing(8)
-    step_model_lay.addWidget(w.model_card)
-    step_model_lay.addStretch()
+    step_model_lay.addWidget(w.model_card, 1)
 
     step_train = QWidget(); step_train_lay = QVBoxLayout(step_train)
     step_train_lay.setContentsMargins(0, 0, 0, 0)
     step_train_lay.setSpacing(8)
-    step_train_lay.addWidget(w.run_card)
-    step_train_lay.addStretch()
+    step_train_lay.addWidget(w.run_card, 1)
 
     w.step_tabs.addTab(step_data, "1. Dataset")
     w.step_tabs.addTab(step_config, "2. Variables")
@@ -647,8 +648,8 @@ def build_layout():
     w.log_box = QTextEdit(); w.log_box.setReadOnly(True)
     w.log_box.setPlaceholderText("Execution logs will appear here.")
     # Compact tables
-    w.metrics_table = QTableWidget(); w.metrics_table.setObjectName("metricsTable")
-    w.stats_table = QTableWidget(); w.stats_table.setObjectName("statsTable")
+    w.metrics_table = QTableView(); w.metrics_table.setObjectName("metricsTable")
+    w.stats_table = QTableView(); w.stats_table.setObjectName("statsTable")
     w.metrics_table.setSortingEnabled(True)
     w.stats_table.setSortingEnabled(True)
     w.metrics_table.setAlternatingRowColors(True)

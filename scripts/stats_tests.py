@@ -7,6 +7,7 @@ Outputs:
 from __future__ import annotations
 
 import os
+from utils.paths import EVALUATION_DIR
 import glob
 import numpy as np
 import pandas as pd
@@ -22,7 +23,7 @@ STRATS = ['kfold', 'repeated', 'nested']
 
 
 def _read_scores(strategy: str, model: str) -> pd.DataFrame:
-    pattern = os.path.join(BASE_VC, strategy, f'{model}_output*', '1_Overall_Evaluation', 'cv_splits.xlsx')
+    pattern = os.path.join(BASE_VC, strategy, f'{model}_output*', EVALUATION_DIR, 'cv_splits.xlsx')
     files = sorted(glob.glob(pattern))
     if not files:
         return pd.DataFrame(columns=['R2', 'RMSE', 'MAE'])
@@ -63,7 +64,7 @@ def corrected_resampled_ttest(scores_a: np.ndarray, scores_b: np.ndarray, k: int
 
 def _get_best_model_name(strategy):
     # Peek into the first available output directory
-    pat = os.path.join(BASE, strategy, '*_output*', '1_Overall_Evaluation', 'cv_splits.xlsx')
+    pat = os.path.join(BASE_VC, strategy, '*_output*', EVALUATION_DIR, 'cv_splits.xlsx')
     cands = glob.glob(pat)
     if cands:
         import re

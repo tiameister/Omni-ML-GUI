@@ -1,4 +1,3 @@
-import os
 import re
 from typing import Dict, Tuple, List, Optional, Iterable
 
@@ -15,6 +14,8 @@ rcParams.update({
 })
 import seaborn as sns
 
+from utils.logger import get_logger
+
 # Try LOWESS for smooth trendlines
 try:
     from statsmodels.nonparametric.smoothers_lowess import lowess as _lowess
@@ -25,17 +26,19 @@ except Exception:
 from utils.text import normalize_text as _norm
 
 
-from utils.humanize import CATEGORY_LABELS, map_labels
+from utils.humanize import map_labels
 from string import capwords as _capwords
 # Centralized quote/backtick normalization
 try:
-    from utils.helpers import normalize_quotes_ascii as _qascii
+    from utils.text import normalize_quotes_ascii as _qascii
 except Exception:
     def _qascii(s: str) -> str:
         return str(s)
 
 # Optional per-feature y-limits for SHAP dependence (kept empty to prefer auto-fit)
 FEATURE_YLIMS: Dict[str, Tuple[float, float]] = {}
+
+LOGGER = get_logger(__name__)
 
 # Pretty display names for known columns
 DISPLAY_NAME_MAP: Dict[str, str] = {
@@ -98,7 +101,7 @@ def _map_value_by_rules(value, rule_map: Dict[str, str]) -> object:
             if as_int in rule_map:
                 return rule_map[as_int]
     except Exception:
-        pass
+        LOGGER.exception("Value mapping failed")
     return value
 
 
@@ -351,3 +354,29 @@ def top_raw_features_by_shap(
     if top_n is None or top_n <= 0:
         return [s[0] for s in scores]
     return [s[0] for s in scores[:min(top_n, len(scores))]]
+
+
+def save_bar(fig_path: str, labels: list[str], values: list[float], title: str, xlabel: str):
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    import numpy as np
+    sns.set_style('whitegrid')
+    fig_h = max(3.0, 0.5 * len(labels))
+    fig, ax = plt.subplots(figsize=(10, fig_h))
+    ypos = np.arange(len(labels))
+    bars = ax.barh(ypos, values, color='#64B5F6', edgecolor='#1E88E5', alpha=0.9)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(labels)
+    ax.set_xlabel(xlabel)
+    ax.set_title(title)
+    ax.grid(True, axis='x', linestyle='--', linewidth=0.7, alpha=0.5)
+    xlim = ax.get_xlim()
+    span = xlim[1] - xlim[0]
+    for y, b, v in zip(ypos, bars, values):
+        x = b.get_width()
+        off = span * 0.01
+        ha = 'left' if x >= 0 else 'right'
+        ax.text(x + (off if x >= 0 else -off), y, f"{v:.3f}", va='center', ha=ha, fontsize=9)
+    fig.tight_layout()
+    fig.savefig(fig_path, dpi=300)
+    plt.close(fig)

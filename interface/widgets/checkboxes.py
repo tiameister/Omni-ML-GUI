@@ -2,8 +2,7 @@ from config import DO_SHAP
 from functools import lru_cache
 import os
 from PyQt6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QCheckBox, QToolBox, QWidget, QHBoxLayout, QPushButton, QSizePolicy, QLineEdit,
-    QGridLayout
+    QGroupBox, QVBoxLayout, QCheckBox, QToolBox, QWidget, QHBoxLayout, QPushButton, QLineEdit, QGridLayout
 )
 from PyQt6.QtCore import QSettings
 

@@ -7,14 +7,14 @@ Outputs:
 from __future__ import annotations
 
 import os
-import glob
+from utils.paths import EVALUATION_DIR
 import numpy as np
 import pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 run_root = os.environ.get("MLTRAINER_RUN_ROOT", "").strip()
 if run_root and os.path.isdir(run_root):
-    OUTDIR = os.path.join(run_root, '1_Overall_Evaluation', 'xai_consistency')
+    OUTDIR = os.path.join(run_root, EVALUATION_DIR, 'xai_consistency')
 else:
     OUTDIR = os.path.join(ROOT, 'output', 'xai_consistency')
 os.makedirs(OUTDIR, exist_ok=True)

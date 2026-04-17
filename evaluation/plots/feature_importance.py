@@ -20,7 +20,7 @@ except Exception:
 
 # Normalize curly quotes/backticks to ASCII to avoid missing glyphs across OSes
 try:
-    from utils.helpers import normalize_quotes_ascii as _qascii
+    from utils.text import normalize_quotes_ascii as _qascii
 except Exception:
     def _qascii(s):
         return str(s)
@@ -79,7 +79,7 @@ def plot_feature_importance_heatmap(
             # Try permutation importance as a fallback
             try:
                 from sklearn.inspection import permutation_importance
-                res = permutation_importance(pipe, X, y, n_repeats=10, random_state=0, n_jobs=1)
+                res = permutation_importance(pipe, X, y, n_repeats=5, random_state=42, n_jobs=-1)
                 imp = res.importances_mean
             except Exception:
                 imp = None
@@ -158,13 +158,20 @@ def plot_feature_importance_heatmap(
         left_margin = min(0.52, max(0.22, 0.16 + 0.006 * max_label_len))
         fig.subplots_adjust(left=left_margin, right=0.96, bottom=0.12, top=top_margin)
         try:
-            fig.savefig(os.path.join(out_expl, f'{model_name}_feature_importance.png', bbox_inches="tight"), dpi=300)
+            fig.savefig(
+                os.path.join(out_expl, f"{model_name}_feature_importance.png"),
+                bbox_inches="tight",
+                dpi=300,
+            )
         except Exception as e:
             with open(os.path.join(out_expl, f"{model_name}_feature_importance_png_warning.txt"), 'w', encoding='utf-8') as f:
                 f.write(str(e))
         if SAVE_PDF:
             try:
-                fig.savefig(os.path.join(out_expl, f'{model_name}_feature_importance.pdf', bbox_inches="tight"))
+                fig.savefig(
+                    os.path.join(out_expl, f"{model_name}_feature_importance.pdf"),
+                    bbox_inches="tight",
+                )
             except Exception as e:
                 with open(os.path.join(out_expl, f"{model_name}_feature_importance_pdf_warning.txt"), 'w', encoding='utf-8') as f:
                     f.write(str(e))

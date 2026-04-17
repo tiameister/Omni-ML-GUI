@@ -1,11 +1,14 @@
 import os
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QPushButton, QWidget, QHBoxLayout, QFrame, QMessageBox,
-    QCheckBox, QComboBox
+    QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFrame, QMessageBox, QCheckBox,
+    QComboBox
 )
 from PyQt6.QtGui import QPixmap, QFont
 from PyQt6.QtCore import Qt, QSettings
 from utils.localization import i18n, tr
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 class StartupDialog(QDialog):
     def __init__(self, parent=None):
@@ -134,7 +137,7 @@ class StartupDialog(QDialog):
                 dlg = AboutDialog(self)
                 dlg.exec()
             except Exception:
-                pass
+                LOGGER.exception("About dialog failed")
         self.btn_about.clicked.connect(_about)
 
         def _guide():
@@ -152,7 +155,7 @@ class StartupDialog(QDialog):
                         tr("startup.guide_missing", default="No local guide file was found."),
                     )
             except Exception:
-                pass
+                LOGGER.exception("Guide open failed")
         self.btn_guide.clicked.connect(_guide)
 
         if not os.path.exists(os.path.join(proj_root, 'info.pdf')):
@@ -165,7 +168,7 @@ class StartupDialog(QDialog):
             import config as _cfg
             version_text = str(getattr(_cfg, 'VERSION', version_text))
         except Exception:
-            pass
+            LOGGER.exception("Failed to read VERSION from config")
         self.version_label = QLabel(f"Version {version_text}", self)
         self.version_label.setFont(QFont("Segoe UI", 8))
         self.version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -233,7 +236,7 @@ class StartupDialog(QDialog):
             self.settings.setValue("ui/show_startup", bool(self.show_on_start.isChecked()))
             self.settings.sync()
         except Exception:
-            pass
+            LOGGER.exception("Failed to persist startup preferences")
 
     def reject(self):
         self._persist_preferences()

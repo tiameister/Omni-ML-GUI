@@ -15,8 +15,8 @@ Notes:
 from __future__ import annotations
 
 import os
-import re
-from typing import Dict, List, Tuple
+from utils.paths import EVALUATION_DIR
+from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -33,7 +33,7 @@ os.makedirs(OUTDIR, exist_ok=True)
 def _find_latest_cv_splits() -> str | None:
     run_root = str(os.environ.get("MLTRAINER_RUN_ROOT", "")).strip()
     if run_root and os.path.exists(run_root):
-        p = os.path.join(run_root, "1_Overall_Evaluation", "cv_splits.xlsx")
+        p = os.path.join(run_root, EVALUATION_DIR, "cv_splits.xlsx")
         if os.path.isfile(p):
             return p
 
@@ -44,11 +44,11 @@ def _find_latest_cv_splits() -> str | None:
             if name == "runs":
                 runs_dir = os.path.join(base, "runs")
                 for run_id in os.listdir(runs_dir):
-                    p = os.path.join(runs_dir, run_id, "1_Overall_Evaluation", "cv_splits.xlsx")
+                    p = os.path.join(runs_dir, run_id, EVALUATION_DIR, "cv_splits.xlsx")
                     if os.path.isfile(p):
                         candidates.append((os.path.getmtime(p), p))
             else:
-                p = os.path.join(base, name, "1_Overall_Evaluation", "cv_splits.xlsx")
+                p = os.path.join(base, name, EVALUATION_DIR, "cv_splits.xlsx")
                 if os.path.isfile(p):
                     candidates.append((os.path.getmtime(p), p))
     if candidates:
@@ -57,7 +57,7 @@ def _find_latest_cv_splits() -> str | None:
 
     # dynamic fallback
     import glob
-    fallbacks = glob.glob(os.path.join(ROOT, "output", "*_output", "1_Overall_Evaluation", "cv_splits.xlsx"))
+    fallbacks = glob.glob(os.path.join(ROOT, "output", "*_output", EVALUATION_DIR, "cv_splits.xlsx"))
     if fallbacks:
         return sorted(fallbacks, key=os.path.getmtime, reverse=True)[0]
     return None

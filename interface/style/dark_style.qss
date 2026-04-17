@@ -1,6 +1,6 @@
 /* Global Theme */
 * {
-  font-family: "Segoe UI", "Segoe UI Variable Text", "Tahoma", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Segoe UI", "Segoe UI Variable Text", Tahoma, sans-serif;
   font-size: 10.5pt;
   color: #FFFFFF;
 }
