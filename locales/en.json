@@ -55,7 +55,11 @@
     "language": "Language",
     "lang_en": "English",
     "lang_tr": "Turkish",
-    "help": "Help"
+    "help": "Help",
+    "theme": "Appearance",
+    "theme_system": "System (Auto)",
+    "theme_light": "Light",
+    "theme_dark": "Dark"
   },
   "help": {
     "open_guide": "Open Guide",

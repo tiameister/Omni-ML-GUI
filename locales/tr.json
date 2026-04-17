@@ -55,7 +55,11 @@
     "language": "Dil",
     "lang_en": "İngilizce",
     "lang_tr": "Türkçe",
-    "help": "Yardım"
+    "help": "Yardım",
+    "theme": "Görünüm",
+    "theme_system": "Sistem (Otomatik)",
+    "theme_light": "Açık Tema",
+    "theme_dark": "Koyu Tema"
   },
   "help": {
     "open_guide": "Kılavuzu Aç",

@@ -10,6 +10,7 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtCore import QThread, pyqtSignal, QObject
 
 from interface.widgets.startup import StartupDialog
+from interface.logic.theme import theme_manager
 from interface.logic.state import AppState
 from interface.widgets.controls import build_layout
 from interface.widgets.header import create_header
@@ -80,7 +81,10 @@ class MLTrainerApp(QMainWindow):
         icon_path = os.path.join(proj_root, 'images', 'fau.png')
         if os.path.exists(icon_path):
             pass
+
         self._restore_language_preference()
+        self._restore_theme_preference()
+
         self._setup_window()
         self._mark_session_dirty()
         self.state = AppState()
@@ -150,6 +154,33 @@ class MLTrainerApp(QMainWindow):
 
     def _on_language_changed(self):
         self._apply_translations()
+
+
+    def _restore_theme_preference(self):
+        settings = QSettings()
+        saved_theme = str(settings.value("ui/theme", "system")).strip().lower()
+        self._change_theme(saved_theme)
+
+    def _change_theme(self, theme_name: str):
+        from PyQt6.QtWidgets import QApplication
+        theme_manager.load_theme(QApplication.instance(), theme_name)
+        self._sync_theme_actions()
+
+    def _sync_theme_actions(self):
+        if not hasattr(self, "act_theme_light"):
+            return
+        current = theme_manager.current_theme
+        self.act_theme_light.blockSignals(True)
+        self.act_theme_dark.blockSignals(True)
+        self.act_theme_system.blockSignals(True)
+        
+        self.act_theme_light.setChecked(current == "light")
+        self.act_theme_dark.setChecked(current == "dark")
+        self.act_theme_system.setChecked(current == "system")
+        
+        self.act_theme_light.blockSignals(False)
+        self.act_theme_dark.blockSignals(False)
+        self.act_theme_system.blockSignals(False)
 
     def _change_language(self, lang_code: str):
         code = str(lang_code or "").strip().lower()
@@ -408,36 +439,11 @@ class MLTrainerApp(QMainWindow):
         super().resizeEvent(event)
         self._update_header_density()
 
+
     def _load_stylesheet(self):
-        qss_path = os.path.join(os.path.dirname(__file__), "style", "style.qss")
-        legacy_qss_path = os.path.join(os.path.dirname(__file__), "style.qss")
-        try:
-            with open(qss_path, "r", encoding="utf-8") as f:
-                qss_text = f.read()
-                token_map = {
-                    "{{SURFACE_BG_TOP}}": "#EEF3F8",
-                    "{{SURFACE_BG_MID}}": "#E9F0F7",
-                    "{{SURFACE_BG_END}}": "#DDE8F2",
-                    "{{BORDER_SOFT}}": "#C8D8EA",
-                    "{{BORDER_PANEL}}": "#D4DFEC",
-                    "{{COLOR_PRIMARY}}": "#0068B3",
-                    "{{COLOR_ACCENT}}": "#3D8ED1",
-                    "{{TEXT_TITLE}}": "#102333",
-                    "{{TEXT_SUBTITLE}}": "#496279",
-                    "{{TEXT_ACCENT}}": "#1F4D73",
-                    "{{RADIUS_PANEL}}": "14",
-                    "{{RADIUS_CARD}}": "10",
-                    "{{RADIUS_WORKFLOW}}": "12",
-                }
-                for token, value in token_map.items():
-                    qss_text = qss_text.replace(token, value)
-                self.setStyleSheet(qss_text)
-        except FileNotFoundError:
-            LOGGER.warning("Stylesheet not found: %s", qss_path)
-        except Exception:
-            LOGGER.exception("Failed to load stylesheet: %s", qss_path)
-        if os.path.exists(legacy_qss_path):
-            LOGGER.info("Legacy stylesheet detected and ignored: %s", legacy_qss_path)
+        # Migrated to ThemeManager logic via self._restore_theme_preference()
+        pass
+
 
     def _connect_signals(self):
         c = self.controls
@@ -641,7 +647,32 @@ class MLTrainerApp(QMainWindow):
         self.act_settings_shap.triggered.connect(self._on_shap_settings)
         self.menu_settings.addAction(self.act_settings_shap)
 
+
+        self.menu_settings_theme = self.menu_settings.addMenu("")
+        from PyQt6.QtGui import QActionGroup
+        self.theme_action_group = QActionGroup(self)
+        self.theme_action_group.setExclusive(True)
+
+        self.act_theme_system = QAction(self)
+        self.act_theme_system.setCheckable(True)
+        self.act_theme_system.triggered.connect(lambda checked=False: self._change_theme("system") if checked else None)
+        self.theme_action_group.addAction(self.act_theme_system)
+        self.menu_settings_theme.addAction(self.act_theme_system)
+
+        self.act_theme_light = QAction(self)
+        self.act_theme_light.setCheckable(True)
+        self.act_theme_light.triggered.connect(lambda checked=False: self._change_theme("light") if checked else None)
+        self.theme_action_group.addAction(self.act_theme_light)
+        self.menu_settings_theme.addAction(self.act_theme_light)
+
+        self.act_theme_dark = QAction(self)
+        self.act_theme_dark.setCheckable(True)
+        self.act_theme_dark.triggered.connect(lambda checked=False: self._change_theme("dark") if checked else None)
+        self.theme_action_group.addAction(self.act_theme_dark)
+        self.menu_settings_theme.addAction(self.act_theme_dark)
+
         self.menu_settings_language = self.menu_settings.addMenu("")
+
         self.language_action_group = QActionGroup(self)
         self.language_action_group.setExclusive(True)
 
@@ -716,7 +747,13 @@ class MLTrainerApp(QMainWindow):
         self.act_settings_open_model_pool.setText(tr("menu.settings_model_selection", default="Model Selection..."))
         self.act_settings_customize_plots.setText(tr("menu.settings_plot_analysis", default="Plot and Analysis Settings..."))
         self.act_settings_shap.setText(tr("menu.settings_shap", default="SHAP Settings..."))
+
+        self.menu_settings_theme.setTitle(tr("menu.theme", default="Appearance"))
+        self.act_theme_system.setText(tr("menu.theme_system", default="System (Auto)"))
+        self.act_theme_light.setText(tr("menu.theme_light", default="Light"))
+        self.act_theme_dark.setText(tr("menu.theme_dark", default="Dark"))
         self.menu_settings_language.setTitle(tr("menu.language", default="Language"))
+
         self.act_lang_en.setText(tr("menu.lang_en", default="English"))
         self.act_lang_tr.setText(tr("menu.lang_tr", default="Turkish"))
         self.act_settings_open_output.setText(tr("menu.settings_open_output", default="Open Output Folder"))
