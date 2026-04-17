@@ -1,155 +1,105 @@
-# Machine Learning Application — Happiness Score Prediction
+﻿# Machine Learning Application — Advanced Regression & Evaluation Pipeline
 
-This application trains multiple ML models (Linear Regression, Ridge, Lasso, ElasticNet, Random Forest, Gradient Boosting, HistGB, SVR, KNN, XGBoost) with 5-fold cross-validation to predict Happiness Score. It produces publication-ready figures and reports including SHAP explainability, permutation importance, regression statistics, and more.
+This application provides an end-to-end, publication-ready machine learning pipeline for regression tasks. It trains multiple ML models with advanced cross-validation strategies, automates feature engineering, and produces extensive diagnostics, including permutation importance, SHAP explainability, partial dependence plots (PDPs), and regression statistics.
 
-It can be used from the command line (batch runs) or via a simple GUI for interactive workflows.
+It supports fully automated batch execution via the command line Interface (CLI) and an interactive, step-by-step Graphical User Interface (GUI).
 
 ## Highlights
 
-- End-to-end pipeline: data loading → preprocessing → model training → evaluation → explainability
-- 5-fold CV metrics (R², RMSE) with bar charts and Excel exports
-- Permutation importance (CSV/Excel + bar plots)
-- PDP (Partial Dependence) for top features
-- SHAP explainability: summary + dependence plots
-- Publication-ready SHAP visuals with human-readable categorical labels and consistent scales (saved under `./figures/`)
-- Regression tables and coefficient plots (with standardized Betas and 95% CI)
+- **Comprehensive End-to-End Pipeline:** Data loading -> Preprocessing -> Feature Engineering -> Model Training/CV -> Evaluation -> XAI (Explainability).
+- **Supported Models:** Linear Regression, Ridge, Lasso, ElasticNet, Random Forest, Gradient Boosting, HistGB, SVR, KNN, XGBoost.
+- **Cross-Validation Modes:** Standard K-Fold, Repeated K-Fold, and Nested CV.
+- **Robust Preprocessing:** Handles numeric, ordinal, binary, and categorical grouped data with appropriate imputation and scaling techniques.
+- **Automated Feature Engineering:** Optional inclusion of Polynomial Features and Missing-Value Indicators directly from the GUI.
+- **Publication-Ready Figures:** Automatically styled outputs for CV splits, diagnostic plots, permutation importance, and SHAP results mapped with human-readable categorical labels.
+- **Interactive GUI:** Built with PyQt6, providing a local "Publication Studio" for configuring variables before execution, tracking parallel job execution, and evaluating multi-model results.
+
+## Output Directory Structure
+
+Outputs are generated under `output/runs/{RUN_ID}/` with the following stage-based structure:
+
+```text
+output/runs/job1_.../
+├── 0_Feature_Selection/
+│   └── ui_feature_selection_meta.json
+├── 1_Overall_Evaluation/
+│   ├── metrics.xlsx (CV Metrics for all models)
+│   ├── metrics_R2_cv.png (Bar charts)
+│   └── permutation_importance_*.png
+├── 2_Model_Diagnostics/
+│   ├── HistGB/
+│   │   ├── actual_vs_predicted.png
+│   │   ├── learning_curve.png
+│   │   ├── qq_plot.png
+│   │   ├── regression_stats.xlsx
+│   │   └── residuals_plot.png
+│   └── RandomForest/
+├── 3_Manuscript_Figures/
+│   ├── HistGB/
+│   │   ├── *_feature_importance.png
+│   │   ├── *_shap_summary.png
+│   │   └── *_shap_dependence.png
+│   └── RandomForest/
+└── Run_Log_and_Warnings.md
+```
 
 ## Requirements
 
 - Python 3.10+ (tested with 3.11)
-- Windows (PowerShell examples below), macOS/Linux also work with minor command changes
+- OS: Windows, macOS, or Linux.
 
-Recommended Python packages (install if not already available):
+Recommended Python packages:
+```powershell
+pip install numpy pandas scikit-learn seaborn matplotlib shap statsmodels openpyxl PyQt6
+pip install xgboost  # Optional, but required if you want to use the XGBoost model
+```
 
-- numpy, pandas, scikit-learn, seaborn, matplotlib
-- shap, statsmodels, openpyxl
-- xgboost (optional; required for XGBoost model)
-
-Quick install from manifest:
-
+Or quickly install via `requirements.txt`:
 ```powershell
 pip install -r requirements.txt
 ```
 
-## Quickstart (CLI)
-
-1) Place your dataset at `dataset/data.csv` (default path). The pipeline auto-detects the target and feature columns; you can customize `config/__init__.py` and `config/columns.py` if needed.
-
-2) From the project root, run:
-
-- Windows PowerShell
-
-```powershell
-# Create and activate a virtual environment (optional but recommended)
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Install common dependencies
-pip install numpy pandas scikit-learn seaborn matplotlib shap statsmodels openpyxl xgboost
-
-# Run the training pipeline
-python -X faulthandler main.py
-```
-
-3) Outputs
-
-- `./output/<ModelName>_output/` directory with:
-  - evaluation: CV metrics, regression stats, curves
-  - explainability: SHAP results, PDPs, feature importance
-  - diagnostics/fit subfolders for other plots/artifacts
-- Publication-ready SHAP plots under:
-  - `./figures/shap_summary_beeswarm.png`
-  - `./figures/shap_dependence/`
-
 ## Quickstart (GUI)
 
-Run the GUI to load a CSV, select target/features, choose models/plots, and run training interactively.
+Run the GUI to interactively load your dataset, select target/features, apply feature engineering, choose models, and review the results.
 
 ```powershell
-python -X faulthandler run_gui.py
+python run_gui.py
 ```
 
-Inside the GUI:
-- Load your dataset (CSV)
-- Select variables (target and features)
-- Configure SHAP settings (optional)
-- Train models and view outputs. The app saves the same artifacts under `./output/` and will display SHAP summary if available.
-- Use drag-and-drop to load CSV files directly into the main window.
-- Use keyboard shortcuts for speed: `Ctrl+O` (load dataset), `Ctrl+L` (select variables), `Ctrl+Enter` (start training).
-- Resize panel widths using the splitter; layout and panel sizes are persisted between sessions.
+**GUI Workflow:**
+1. **Load Dataset:** Drag-and-drop or select your CSV/Excel file.
+2. **Select Variables:** Pick the target and feature columns. Adjust categorical definitions.
+3. **Train Models:** Check the models to train.
+4. **Evaluate Results:** The embedded result viewer lets you explore correlation matrices, SHAP outputs, CV metrics, and regression stats.
 
-## SHAP Visualization (Publication-ready)
+*Pro-tip:* Use shortcuts like `Ctrl+O` for dataset loading, `Ctrl+L` for variable selection, and `Ctrl+Enter` to queue training.
 
-Kanonik SHAP akışı evaluation/plots + utils/plotting_helpers üzerindedir:
+## Quickstart (CLI)
 
-- `evaluation/plots/pdp_shap.py`
-  - `generate_shap_summary(...)`: SHAP beeswarm ve bar özetleri (insan-okur adlarla)
-  - `generate_shap_dependence(...)`: ham birimler ve düzenli kategorik etiketlerle bağımlılık grafikleri
-  - `explain_with_shap(...)`: yukarıdakilerin hızlı toplayıcısı
-- `utils/plotting_helpers.py`
-  - Kategorik etiket eşleme, sıralı eksenler, yayın-uyumlu stiller
-  - SHAP bağımlılık çizimi için ortak yardımcılar ve tutarlı y-limit/klipleme mantığı
+1) Place your dataset. You can configure data schemas in `config/columns.py` and execution rules in `config/__init__.py`.
+2) Trigger batch jobs from root via:
 
-Ana akış (main.py) bu modülleri kullanır ve sonuçları `output/.../explainability/` altına kaydeder.
-
-## Preprocessing configuration
-
-Preprocessing is defined in `features/preprocess.py`:
-- Numeric columns: median imputation + StandardScaler
-- Ordinal columns: most-frequent imputation + OrdinalEncoder (no scaling)
-- Binary columns: passthrough (no scaling)
-- Other categoricals: most-frequent imputation + OneHotEncoder
-
-Column groups are resolved based on your dataset using `config/columns.py`:
-- Edit `NUMERIC_COLS`, `ORDINAL_COLS`, `BINARY_COLS` to match your schema
-- The resolver will match these names to the actual columns in your CSV (robust to minor naming differences)
-
-## Configuration
-
-Edit `config/__init__.py` for global settings:
-- `DATASET_PATH`: input CSV path
-- `DO_SHAP`: enable/disable SHAP explainability
-- `SHAP_TOP_N`, `SHAP_VAR_THRESH`: SHAP selection behavior
-- `OUTPUT_DIR`, `SAVE_PDF`: output structure and formats
-
-Edit `config/columns.py` for preprocessing groups.
-Customize category labels and ordering via `utils/plotting_helpers.py`.
-
-## Reproducibility
-
-- Random seed is controlled via `config.RSTATE`
-- Cross-validation folds and other stochastic steps use this seed when possible
-
-## Troubleshooting
-
-- Missing packages: install `shap`, `statsmodels`, `openpyxl`, `xgboost` if needed
-- SHAP on non-linear models can be slow; consider sampling or setting `SHAP_TOP_N`
-- If feature names appear unexpected in plots, update `config/columns.py` and label mappings in `utils/plotting_helpers.py`
-
-## Project structure (selected)
-
-```
-config/__init__.py
-config/columns.py                # column grouping for preprocessing
-features/preprocess.py           # ColumnTransformer (num/ord/bin/cat)
-models/train.py                  # training + CV
-evaluation/                      # metrics, plots (explainability/export)
-evaluation/README.md             # evaluation module responsibilities
-scripts/catalog.py               # script purpose/category index
-scripts/README.md                # script run guide and workflow
-scripts/target_analysis.py       # target descriptive analysis helper
-utils/plotting_helpers.py        # publication-ready SHAP helpers
-main.py                          # CLI entrypoint
-run_gui.py                       # GUI entrypoint
-output/                          # model outputs (per run)
-figures/                         # publication-ready SHAP figures
+```powershell
+python main.py
 ```
 
-## Operational catalogs
+All trained models and their artifacts are dropped into the timestamped specific run folder under `output/runs/`.
 
-- Script map and run-order guidance: `scripts/README.md`
-- Evaluation module responsibility map: `evaluation/README.md`
+## Preprocessing Configuration
+
+Preprocessing is defined dynamically via mappings in `config/columns.py` and logic in `features/preprocess.py`:
+- **Numeric columns**: Median imputation + StandardScaler
+- **Ordinal columns**: Most-frequent imputation + OrdinalEncoder
+- **Binary columns**: Most-frequent imputation + Passthrough
+- **Categorical (Nominal) columns**: Most-frequent imputation + OneHotEncoder
+
+## Reproducibility and Configuration
+
+- **Reproducibility**: Random seed (`config.RSTATE`) is distributed to cross-validation folds, sub-shuffles, and stochastic model initializations. 
+- **Configuration Paths**:
+  - `config/__init__.py` handles primary operational rules (`DO_SHAP`, dataset path, `CV_FOLDS`).
+  - `utils/plotting_helpers.py` handles cosmetic transformations (e.g., matching encoded variables like `Gender=1` back to `Male/Female` in matplotlib).
 
 ## License
-
-Proprietary/internal (update as appropriate).
+Proprietary / Internal.
