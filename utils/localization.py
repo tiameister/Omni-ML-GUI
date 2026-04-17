@@ -2,6 +2,7 @@ import json
 import logging
 import locale
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ class LocalizationManager:
         except Exception:
             return ["en"]
 
-    def tr(self, key_path: str, default: str | None = None, **kwargs) -> str:
+    def tr(self, key_path: str, default: Optional[str] = None, **kwargs) -> str:
         """
         Nokta notasyonlu ('ui.buttons.ok' gibi) gelen anahtarı okur.
         1- Seçili dilde (örn. TR) arar.
