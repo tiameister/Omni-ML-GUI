@@ -311,14 +311,11 @@ def build_layout():
     w.vars_button = QPushButton("Select Variables")
     w.vars_button.setObjectName("accentButton")
     w.vars_button.setEnabled(False)
-    w.vars_button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     
     w.studio_btn = QPushButton("Publication Studio")
     w.studio_btn.setObjectName("actionButton")  # We can style it normally
     w.studio_btn.setEnabled(False)
     w.studio_btn.setToolTip("Select variables to unlock Publication Studio.")
-    # Keep hidden until it's actually usable (typically later in the workflow).
-    w.studio_btn.setVisible(False)
     
     w.selection_label = QLabel("0 Features Selected (Target pending)")
     w.selection_label.setObjectName("selectionBadge")
@@ -347,16 +344,19 @@ def build_layout():
     w.cv_mode_combo.addItem("Nested CV (Thorough)", "nested")
     w.cv_mode_combo.addItem("Hold-Out (Fast)", "holdout")
     w.cv_mode_combo.setToolTip("Use click-to-select. Mouse wheel is disabled to prevent accidental changes.")
-    # Constrain widths to match expected input length.
-    w.cv_mode_combo.setMaximumWidth(250)
+    # Keep field widths aligned in the form for a clean vertical axis.
+    form_field_w = 320
+    w.cv_mode_combo.setMinimumWidth(form_field_w)
+    w.cv_mode_combo.setMaximumWidth(form_field_w)
     w.cv_mode_combo.setObjectName("cvMethodCombo")
     w.cv_spin = NoWheelSpinBox(); w.cv_spin.setMinimum(2); w.cv_spin.setValue(5)
     try:
         w.cv_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
     except Exception:
         pass
-    w.cv_spin.setMaximumWidth(60)
-    w.cv_spin.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    w.cv_spin.setMinimumWidth(form_field_w)
+    w.cv_spin.setMaximumWidth(form_field_w)
+    w.cv_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
     w.cv_spin.setToolTip("Folds value is changed by arrows or keyboard. Mouse wheel is disabled.")
     w.cv_spin.setObjectName("cvFoldsSpin")
     w.cv_folds_label = QLabel("Folds:")
@@ -481,7 +481,6 @@ def build_layout():
     w.config_card = QFrame()
     w.config_card.setObjectName("workflowCard")
     w.config_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-    w.config_card.setMaximumWidth(800)
     config_card_layout = QVBoxLayout(w.config_card)
     config_card_layout.setContentsMargins(24, 24, 24, 24)
     config_card_layout.setSpacing(8)
@@ -497,6 +496,16 @@ def build_layout():
     
     config_card_layout.addSpacing(16)
     
+    vars_row = QHBoxLayout()
+    vars_row.setSpacing(12)
+    vars_row.addWidget(w.vars_button)
+    vars_row.addWidget(w.studio_btn)
+    vars_row.addStretch()
+    
+    config_card_layout.addLayout(vars_row)
+    
+    config_card_layout.addSpacing(12)
+    
     # Variables card
     w.variables_card = QFrame()
     w.variables_card.setObjectName("summaryCard")
@@ -504,13 +513,6 @@ def build_layout():
     variables_layout.setContentsMargins(16, 16, 16, 16)
     variables_layout.setSpacing(10)
     variables_layout.addWidget(w.selection_label)
-
-    vars_action_row = QHBoxLayout()
-    vars_action_row.setContentsMargins(0, 0, 0, 0)
-    vars_action_row.setSpacing(8)
-    vars_action_row.addWidget(w.vars_button)
-    vars_action_row.addStretch(1)
-    variables_layout.addLayout(vars_action_row)
 
     fe_row = QHBoxLayout()
     fe_row.setContentsMargins(0, 0, 0, 0)
@@ -771,7 +773,7 @@ def build_layout():
     step_config = QWidget(); step_config_lay = QVBoxLayout(step_config)
     step_config_lay.setContentsMargins(0, 0, 0, 0)
     step_config_lay.setSpacing(8)
-    step_config_lay.addWidget(w.config_card, 0, Qt.AlignmentFlag.AlignHCenter)
+    step_config_lay.addWidget(w.config_card, 1)
 
     step_model = QWidget(); step_model_lay = QVBoxLayout(step_model)
     step_model_lay.setContentsMargins(0, 0, 0, 0)

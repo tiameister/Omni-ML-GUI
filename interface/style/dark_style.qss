@@ -260,11 +260,11 @@ QLabel#selectionBadge[state="ready"] {
 }
 
 QComboBox#cvMethodCombo {
-  max-width: 250px;
+  max-width: 420px;
 }
 
 QSpinBox#cvFoldsSpin {
-  max-width: 60px;
+  max-width: 120px;
   padding: 6px 10px;
   border-radius: 999px;
   background: #14171C;
@@ -272,22 +272,22 @@ QSpinBox#cvFoldsSpin {
 }
 
 QPushButton#inlineInfo {
-  margin-left: 8px;
-  background: #2C2C2E;
-  border: none;
+  background: transparent;
+  border: 1px solid #333843;
   border-radius: 10px;
   min-width: 20px;
   max-width: 20px;
   min-height: 20px;
   max-height: 20px;
-  color: #C7CCD4;
+  color: #A7B0BC;
   font-weight: 800;
   padding: 0px;
 }
 
 QPushButton#inlineInfo:hover {
-  color: #FFFFFF;
-  background: #3A3A3C;
+  border-color: #0A84FF;
+  color: #E8EBF0;
+  background: #151A22;
 }
 
 /* Models (Step 3) */
@@ -771,20 +771,19 @@ QTabBar::tab:selected {
   min-width: 100px;
   padding: 10px 16px;
   font-weight: 500;
-  border-radius: 0px;
+  border-radius: 10px;
   margin-right: 8px;
 }
 
 #workflowTabs QTabBar::tab:hover {
-  background: transparent;
+  background: #2A2A2C;
 }
 
 #workflowTabs QTabBar::tab:selected {
   color: #0A84FF;
-  border: none;
-  border-bottom: 2px solid #0A84FF;
-  background: transparent;
-  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  background: #1E1E1E;
+  border: 1px solid #3A3A3C;
 }
 
 #workflowTabs QTabBar::tab:disabled {

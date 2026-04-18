@@ -627,22 +627,7 @@ class MLTrainerApp(QMainWindow):
         if hasattr(c, "results_dialog"):
             c.results_dialog.finished.connect(self._on_results_dialog_finished)
 
-        # Keep stepper completion icons in sync with the active step.
-        if hasattr(c, "step_tabs"):
-            try:
-                c.step_tabs.currentChanged.connect(self._on_step_tab_changed)
-            except Exception:
-                pass
-
         self._init_shortcuts()
-
-    def _on_step_tab_changed(self, _index: int):
-        # Re-apply completion icons so future steps never show as completed.
-        self._sync_step_tab_titles(
-            has_data=bool(getattr(self, "_guided_has_data", False)),
-            has_variables=bool(getattr(self, "_guided_has_variables", False)),
-            has_models=bool(getattr(self, "_guided_has_models", False)),
-        )
 
     def _init_shortcuts(self):
         self._shortcut_load = QShortcut(QKeySequence("Ctrl+O"), self)
@@ -2985,12 +2970,6 @@ class MLTrainerApp(QMainWindow):
         c = self.controls
         if not hasattr(c, "step_tabs"):
             return
-
-        # Cache the latest step-state booleans for UI re-sync (e.g., on tab changes).
-        self._guided_has_data = bool(has_data)
-        self._guided_has_variables = bool(has_variables)
-        self._guided_has_models = bool(has_models)
-
         c.step_tabs.setTabEnabled(0, True)
         c.step_tabs.setTabEnabled(1, bool(has_data))
         c.step_tabs.setTabEnabled(2, bool(has_variables))
@@ -3030,20 +3009,10 @@ class MLTrainerApp(QMainWindow):
         except Exception:
             ok_icon = QIcon()
 
-        # Completion should never be shown for steps ahead of the current step.
         try:
-            current_idx = int(c.step_tabs.currentIndex())
-        except Exception:
-            current_idx = 0
-
-        step1_done = bool(has_data)
-        step2_done = bool(has_data) and bool(has_variables)
-        step3_done = bool(has_data) and bool(has_variables) and bool(has_models)
-
-        try:
-            c.step_tabs.setTabIcon(0, ok_icon if (current_idx >= 0 and step1_done) else QIcon())
-            c.step_tabs.setTabIcon(1, ok_icon if (current_idx >= 1 and step2_done) else QIcon())
-            c.step_tabs.setTabIcon(2, ok_icon if (current_idx >= 2 and step3_done) else QIcon())
+            c.step_tabs.setTabIcon(0, ok_icon if has_data else QIcon())
+            c.step_tabs.setTabIcon(1, ok_icon if has_variables else QIcon())
+            c.step_tabs.setTabIcon(2, ok_icon if has_models else QIcon())
             if c.step_tabs.count() > 3:
                 c.step_tabs.setTabIcon(3, QIcon())
         except Exception:
