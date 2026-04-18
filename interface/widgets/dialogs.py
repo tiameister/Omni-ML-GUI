@@ -1472,6 +1472,9 @@ class PublicationExportDialog(QDialog):
         layout.addLayout(actions_row)
 
         self.variable_map_table = QTableWidget(0, 3)
+        self.variable_map_table.setFrameShape(QFrame.Shape.NoFrame)
+        self.variable_map_table.setShowGrid(False)
+        self.variable_map_table.setStyleSheet("QTableWidget::item { border-bottom: 1px solid #E2EAF3; } QTableWidget::item:selected { background-color: #E6F0FA; color: #1C1C1E; }")
         self.variable_map_table.setAlternatingRowColors(True)
         self.variable_map_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.variable_map_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -1746,6 +1749,9 @@ class PublicationExportDialog(QDialog):
         layout.addLayout(actions_row)
 
         self.value_rule_table = QTableWidget(0, 4)
+        self.value_rule_table.setFrameShape(QFrame.Shape.NoFrame)
+        self.value_rule_table.setShowGrid(False)
+        self.value_rule_table.setStyleSheet("QTableWidget::item { border-bottom: 1px solid #E2EAF3; } QTableWidget::item:selected { background-color: #E6F0FA; color: #1C1C1E; }")
         self.value_rule_table.setAlternatingRowColors(True)
         self.value_rule_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.value_rule_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)

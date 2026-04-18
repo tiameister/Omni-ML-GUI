@@ -65,7 +65,7 @@ class FeatureEngineeringStudioDialog(QDialog):
         footer_lay = QHBoxLayout(footer)
         footer_lay.setContentsMargins(24, 16, 24, 16)
         
-        self.btn_export = QPushButton(tr("dialogs.fe_studio.export", default="Generate Dataset & Use..."))
+        self.btn_export = QPushButton(tr("dialogs.fe_studio.export", default="Generate Dataset"))
         self.btn_export.setObjectName("outlineButton")
         self.btn_export.clicked.connect(self._on_export_clicked)
         self.btn_export.setToolTip("Create a physical CSV from these rules and switch to it immediately. Careful: Data Leakage risk.")
@@ -81,9 +81,9 @@ class FeatureEngineeringStudioDialog(QDialog):
         self.btn_apply.clicked.connect(self.accept)
         self.btn_apply.setToolTip("Schedule these rules to run safely inside the cross-validation folds.")
         
-        footer_lay.addWidget(self.btn_export)
         footer_lay.addStretch(1)
         footer_lay.addWidget(self.btn_cancel)
+        footer_lay.addWidget(self.btn_export)
         footer_lay.addWidget(self.btn_apply)
         main_layout.addWidget(footer)
 
@@ -337,10 +337,10 @@ class FeatureEngineeringStudioDialog(QDialog):
                 letter-spacing: 0.5px;
             }
             QComboBox#appleCombo {
-                background-color: #E5E5EA; border: none; border-radius: 6px; padding: 6px 12px; color: #1C1C1E; font-weight: 500; font-size: 13px;
+                background-color: #E5E5EA; border: none; border-radius: 6px; padding: 6px 12px; color: #1C1C1E; font-weight: 400; font-size: 13px;
             }
             QSpinBox#appleSpinBox {
-                background-color: #E5E5EA; border: none; border-radius: 6px; padding: 6px 10px; color: #1C1C1E; font-weight: 500; font-size: 13px;
+                background-color: #F2F2F7; border: 1px solid #D1D1D6; border-radius: 6px; padding: 6px 10px; color: #1C1C1E; font-weight: 500; font-size: 13px;
                 qproperty-alignment: 'AlignHCenter';
             }
             QPushButton#outlineButton {

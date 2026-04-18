@@ -316,15 +316,11 @@ def build_layout():
     w.vars_button.setEnabled(False)
     
     w.studio_btn = QPushButton("Publication Studio")
-    w.studio_btn.setObjectName("actionButton")  # We can style it normally
+    w.studio_btn.setObjectName("actionButton")
     w.studio_btn.setEnabled(False)
     w.studio_btn.setToolTip("Select variables to unlock Publication Studio.")
     
-    w.selection_label = QLabel("0 Features Selected (Target pending)")
-    w.selection_label.setObjectName("selectionBadge")
-    w.selection_label.setWordWrap(True)
-    w.selection_label.setMaximumWidth(420)
-    w.selection_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+    # We will alias selection_label to the subtitle object later so the badge goes into the text organically.
     w.fe_checkbox = QCheckBox("Enable Feature Engineering")
     w.fe_checkbox.setEnabled(False)
     w.fe_checkbox.setToolTip("Create and use engineered features before training.")
@@ -502,9 +498,8 @@ def build_layout():
         show_bottom_line=True
     )
     
-    # Selection badge goes into the subtitle dynamically, but we keep the label reference for qt_app
-    w.selection_label.setVisible(False)
-    variables_layout.addWidget(w.selection_label) # Keep it hidden but in layout to not break qt_app logic
+    # Selection badge goes into the subtitle dynamically
+    w.selection_label = w.vars_target_subtitle
 
     # Optional hint area (kept for compatibility with older controller logic)
     w.vars_blocked_hint = QLabel("")
@@ -550,26 +545,24 @@ def build_layout():
     )
     variables_layout.addWidget(row3)
 
-    config_card_layout.addWidget(w.variables_card)
-    config_card_layout.addSpacing(16)
-
-    # Validation card
-    w.validation_card = QFrame()
-    w.validation_card.setObjectName("appleCard")
-    validation_layout = QVBoxLayout(w.validation_card)
-    validation_layout.setContentsMargins(0, 0, 0, 0)
-    validation_layout.setSpacing(0)
-
     # 4. Row: CV Method
     w.cv_mode_combo.setMinimumWidth(200)
     w.cv_mode_combo.setMaximumWidth(200)
+    # 4. Row: CV Method
+    w.cv_card = QFrame()
+    w.cv_card.setObjectName("summaryCard")
+    w.cv_card.setMaximumWidth(850)
+    cv_card_layout = QVBoxLayout(w.cv_card)
+    cv_card_layout.setContentsMargins(0, 0, 0, 0)
+    cv_card_layout.setSpacing(0)
+
     row4, w.cv_method_title, w.cv_method_subtitle = create_apple_settings_row(
         right_widget=w.cv_mode_combo,
         title_text=tr("controls.validation.row1_title", default="Validation Method"),
         subtitle_text=tr("controls.validation.row1_subtitle", default="Select cross-validation strategy"),
         show_bottom_line=True
     )
-    validation_layout.addWidget(row4)
+    cv_card_layout.addWidget(row4)
 
     # 5. Row: CV Folds
     row5, w.cv_folds_title, w.cv_folds_subtitle = create_apple_settings_row(
@@ -578,9 +571,12 @@ def build_layout():
         subtitle_text=tr("controls.validation.row2_subtitle", default="For K-Fold validation splits"),
         show_bottom_line=False
     )
-    validation_layout.addWidget(row5)
+    cv_card_layout.addWidget(row5)
 
-    config_card_layout.addWidget(w.validation_card)
+    w.variables_card.setMaximumWidth(850)
+    config_card_layout.addWidget(w.variables_card)
+    config_card_layout.addSpacing(16)
+    config_card_layout.addWidget(w.cv_card)
     config_card_layout.addStretch(1)
 
     w.model_card = QFrame()

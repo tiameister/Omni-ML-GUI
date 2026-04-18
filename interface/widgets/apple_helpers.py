@@ -33,7 +33,7 @@ def create_apple_settings_row(right_widget, title_text="", subtitle_text="", sho
     lay.addLayout(text_lay, 1)
     
     if right_widget:
-        # Give right widget stretch of 0, aligned right
+        # Align controls directly to the right edge
         lay.addWidget(right_widget, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
     container_lay.addWidget(row)
