@@ -899,3 +899,52 @@ QToolBox::tab {
 QDialog {
   background: #FFFFFF;
 }
+/* Apple System Preferences UI Style Settings */
+QFrame#appleCard {
+  background: #FFFFFF;
+  border: 1px solid #D1D1D6;
+  border-radius: 12px;
+}
+
+QFrame#appleRow {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #E5E5EA;
+  border-bottom-left-radius: 0px;
+  border-bottom-right-radius: 0px;
+}
+
+QFrame#appleRowLast {
+  background: transparent;
+  border: none;
+  border-bottom: none;
+}
+
+QLabel#appleRowTitle {
+  color: #1C1C1E;
+  font-size: 11pt;
+  font-weight: 500;
+}
+
+QLabel#appleRowSubtitle {
+  color: #8E8E93;
+  font-size: 9.5pt;
+  font-weight: 400;
+}
+
+QCheckBox#toggleSwitch {
+  spacing: 5px;
+}
+
+QCheckBox#toggleSwitch::indicator {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: 1px solid #E5E5EA;
+  background-color: #E5E5EA;
+}
+
+QCheckBox#toggleSwitch::indicator:checked {
+  background-color: #34C759;
+  border: 1px solid #34C759;
+}

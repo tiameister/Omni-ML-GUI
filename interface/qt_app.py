@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import os
 import sys
 import time
 import json
 import re
+from typing import TYPE_CHECKING
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -18,7 +21,7 @@ from PyQt6.QtWidgets import (
     QStyle,
 )
 from PyQt6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction, QActionGroup
-from PyQt6.QtCore import Qt, QUrl, QSettings, QCoreApplication
+from PyQt6.QtCore import Qt, QUrl, QSettings, QCoreApplication, QTimer
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtCore import QThread, pyqtSignal, QObject
 
@@ -38,18 +41,32 @@ from interface.widgets.dialogs import (
     PublicationExportDialog,
 )
 from interface.widgets.checkboxes import get_plot_pages, get_optional_script_label_map
-from interface.logic.training import run_training
-from data.loader import SUPPORTED_DATASET_EXTENSIONS
-import pandas as pd
+from data.file_types import SUPPORTED_DATASET_EXTENSIONS
 from config import OUTPUT_DIR, RUN_TAG
 from utils.logger import get_logger
 from utils.paths import get_output_root, safe_folder_name
 from utils.text import normalize_quotes_ascii
 from utils.localization import i18n, tr
 
+if TYPE_CHECKING:
+    import pandas as pd
+
 
 LOGGER = get_logger(__name__)
 UI_LAYOUT_VERSION = 5
+
+
+_PANDAS = None
+
+
+def _pd():
+    """Lazy-import pandas to keep GUI startup fast."""
+    global _PANDAS
+    if _PANDAS is None:
+        import pandas as _pandas
+
+        _PANDAS = _pandas
+    return _PANDAS
 
 
 class _TrainWorker(QObject):
@@ -90,7 +107,10 @@ class _TrainWorker(QObject):
     def run(self):
         t0 = time.time()
         try:
-            metrics_df, fitted_models, stats_df, stats_summary_df, out_info = run_training(
+            # Import lazily so GUI startup doesn't pay sklearn/pandas cost.
+            from interface.logic.training import run_training as run_training_ui
+
+            metrics_df, fitted_models, stats_df, stats_summary_df, out_info = run_training_ui(
                 self.effective_state,
                 self.selected_models,
                 self.selected_plots,
@@ -179,6 +199,17 @@ class MLTrainerApp(QMainWindow):
         self.controls = build_layout()
         self._assemble_ui()
         self._load_stylesheet()
+
+        self._model_summary_timer = QTimer(self)
+        self._model_summary_timer.setSingleShot(True)
+        self._model_summary_timer.setInterval(80)
+        self._model_summary_timer.timeout.connect(self._refresh_model_summary)
+
+        self._runtime_hint_timer = QTimer(self)
+        self._runtime_hint_timer.setSingleShot(True)
+        self._runtime_hint_timer.setInterval(80)
+        self._runtime_hint_timer.timeout.connect(self._update_runtime_hint)
+
         self._connect_signals()
         self._init_job_manager_ui()
         self._restore_event_log()
@@ -409,6 +440,8 @@ class MLTrainerApp(QMainWindow):
         if best_row is None:
             return None
 
+        pd = _pd()
+
         normalized = {
             re.sub(r"[^a-z0-9]+", "", str(col).lower()): col
             for col in list(best_row.index)
@@ -440,7 +473,14 @@ class MLTrainerApp(QMainWindow):
                 default="Complete training to receive a recommendation.",
             ),
         }
-        if not isinstance(metrics_df, pd.DataFrame) or metrics_df.empty:
+        if metrics_df is None:
+            return summary
+
+        try:
+            pd = _pd()
+            if not isinstance(metrics_df, pd.DataFrame) or metrics_df.empty:
+                return summary
+        except Exception:
             return summary
 
         best_row = metrics_df.iloc[0]
@@ -608,10 +648,10 @@ class MLTrainerApp(QMainWindow):
         c.cv_mode_combo.currentTextChanged.connect(self._on_cv_mode_changed)
         # Model summary refresh
         for chk in c.model_checks.values():
-            chk.toggled.connect(self._refresh_model_summary)
+            chk.toggled.connect(self._refresh_model_summary_debounced)
             chk.toggled.connect(self._on_user_setting_changed)
         for chk in c.plot_checks.values():
-            chk.toggled.connect(self._update_runtime_hint)
+            chk.toggled.connect(self._update_runtime_hint_debounced)
             chk.toggled.connect(self._on_user_setting_changed)
 
         c.cv_mode_combo.currentIndexChanged.connect(self._on_user_setting_changed)
@@ -1861,7 +1901,14 @@ class MLTrainerApp(QMainWindow):
             "feature_count_after_fe": 0,
         }
 
-        if not isinstance(self.state.df, pd.DataFrame):
+        if self.state.df is None:
+            return self.state, base_runtime
+
+        try:
+            pd = _pd()
+            if not isinstance(self.state.df, pd.DataFrame):
+                return self.state, base_runtime
+        except Exception:
             return self.state, base_runtime
 
         raw_target = str(self.state.target or "").strip()
@@ -1949,8 +1996,8 @@ class MLTrainerApp(QMainWindow):
         has_models = any(chk.isChecked() for chk in c.model_checks.values())
         if not has_data:
             c.vars_button.setEnabled(False)
-            if hasattr(c, "vars_blocked_hint"):
-                c.vars_blocked_hint.setVisible(True)
+            if hasattr(c, "vars_target_subtitle"):
+                c.vars_target_subtitle.setText(tr("controls.variables.row1_subtitle", default="Requires dataset to be loaded first"))
             if hasattr(c, "studio_btn"):
                 c.studio_btn.setEnabled(False)
             c.preview_button.setEnabled(False)
@@ -1973,8 +2020,8 @@ class MLTrainerApp(QMainWindow):
             return
 
         c.vars_button.setEnabled(True)
-        if hasattr(c, "vars_blocked_hint"):
-            c.vars_blocked_hint.setVisible(False)
+        if hasattr(c, "vars_target_subtitle"):
+            c.vars_target_subtitle.setText(tr("controls.variables.row1_subtitle_ready", default="Click to select target regression variable"))
         c.preview_button.setEnabled(True)
         c.fe_checkbox.setEnabled(True)
         try:
@@ -2023,6 +2070,10 @@ class MLTrainerApp(QMainWindow):
             tr("status.selected_features_tooltip", default="Selected features:\n")
             + (", ".join(feat_names) if feat_names else tr("common.none", default="none"))
         )
+        
+        if hasattr(c, "vars_target_subtitle"):
+            c.vars_target_subtitle.setText(f"Target: {target_disp} \n{len(feat_names)} Features selected")
+
         c.kpi_target_value.setText(target_disp)
         self._set_step2_selection_badge_state("ready")
         c.train_button.setEnabled(has_models)
@@ -2772,10 +2823,17 @@ class MLTrainerApp(QMainWindow):
 
     def _render_results_from_run(self, metrics_df, stats_summary_df, out_info):
         c = self.controls
-        self._latest_metrics_df = metrics_df.copy(deep=True) if isinstance(metrics_df, pd.DataFrame) else None
-        self._latest_stats_summary_df = (
-            stats_summary_df.copy(deep=True) if isinstance(stats_summary_df, pd.DataFrame) else None
-        )
+        self._latest_metrics_df = None
+        self._latest_stats_summary_df = None
+        try:
+            pd = _pd()
+            self._latest_metrics_df = metrics_df.copy(deep=True) if isinstance(metrics_df, pd.DataFrame) else None
+            self._latest_stats_summary_df = (
+                stats_summary_df.copy(deep=True) if isinstance(stats_summary_df, pd.DataFrame) else None
+            )
+        except Exception:
+            self._latest_metrics_df = None
+            self._latest_stats_summary_df = None
 
         if metrics_df is not None:
             if not metrics_df.empty:
@@ -2920,14 +2978,22 @@ class MLTrainerApp(QMainWindow):
         profile: dict[str, dict] = {}
 
         selected_variables = self._build_publication_selected_variables()
-        if not isinstance(self.state.df, pd.DataFrame) or self.state.df.empty:
+        df = self.state.df
+        if df is None:
+            return profile
+
+        try:
+            pd = _pd()
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                return profile
+        except Exception:
             return profile
 
         for col_name in selected_variables:
-            if col_name not in self.state.df.columns:
+            if col_name not in df.columns:
                 continue
 
-            series = self.state.df[col_name]
+            series = df[col_name]
             rec = profile.setdefault(
                 col_name,
                 {
@@ -3156,6 +3222,18 @@ class MLTrainerApp(QMainWindow):
         self._mark_session_clean()
         i18n.remove_listener(self._language_listener)
         super().closeEvent(event)
+
+    def _refresh_model_summary_debounced(self):
+        try:
+            self._model_summary_timer.start()
+        except Exception:
+            self._refresh_model_summary()
+
+    def _update_runtime_hint_debounced(self):
+        try:
+            self._runtime_hint_timer.start()
+        except Exception:
+            self._update_runtime_hint()
 
     def _refresh_model_summary(self):
         c = self.controls

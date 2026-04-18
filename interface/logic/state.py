@@ -1,6 +1,10 @@
-import pandas as pd
-from interface.validation import validate_csv_structure
-from data.loader import read_dataset_safely
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
+
 from utils.logger import get_logger
 
 
@@ -30,6 +34,8 @@ class AppState:
         Load CSV or Excel data with robust parsing and normalization.
         """
         try:
+            from data.loader import read_dataset_safely
+
             df, source = read_dataset_safely(path)
             LOGGER.info("GUI loaded dataset '%s' via '%s' shape=%s", path, source, tuple(df.shape))
             return df
@@ -43,6 +49,8 @@ class AppState:
         Run structure/content validation on the DataFrame.
         Returns (critical_errors, warnings).
         """
+        from interface.validation import validate_csv_structure
+
         return validate_csv_structure(df)
 
     def set_dataframe(self, df: pd.DataFrame):

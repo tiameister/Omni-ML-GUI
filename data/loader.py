@@ -4,15 +4,12 @@ from typing import Tuple
 import re
 from pathlib import Path
 from exceptions import DataLoadError
+from data.file_types import EXCEL_EXTENSIONS, SUPPORTED_DATASET_EXTENSIONS
 from utils.logger import get_logger
 from utils.text import normalize_text
 
 
 LOGGER = get_logger(__name__)
-
-
-EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".xlsb"}
-SUPPORTED_DATASET_EXTENSIONS = tuple(sorted({".csv", *EXCEL_EXTENSIONS}))
 
 
 def _coerce_numeric_like_object_columns(df: pd.DataFrame, threshold: float = 0.9) -> pd.DataFrame:

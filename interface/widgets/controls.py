@@ -1,3 +1,4 @@
+from interface.widgets.apple_helpers import create_apple_settings_row
 from PyQt6.QtWidgets import (
     QApplication,
     QStyle,
@@ -326,17 +327,6 @@ def build_layout():
     w.fe_checkbox.setEnabled(False)
     w.fe_checkbox.setToolTip("Create and use engineered features before training.")
 
-    w.fe_info_btn = QPushButton("i")
-    w.fe_info_btn.setObjectName("inlineInfo")
-    w.fe_info_btn.setEnabled(True)
-    try:
-        w.fe_info_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    except Exception:
-        pass
-    w.fe_info_btn.setToolTip(
-        "Feature Engineering automatically imputes missing values, one-hot encodes categoricals, and scales numerical features."
-    )
-
     # CV controls (compact, card-friendly)
     w.cv_mode_combo = NoWheelComboBox()
     w.cv_mode_combo.addItem("Repeated K-Fold (Recommended)", "repeated")
@@ -497,77 +487,82 @@ def build_layout():
     
     # Variables card
     w.variables_card = QFrame()
-    w.variables_card.setObjectName("summaryCard")
+    w.variables_card.setObjectName("appleCard")
     variables_layout = QVBoxLayout(w.variables_card)
-    variables_layout.setContentsMargins(16, 16, 16, 16)
-    variables_layout.setSpacing(10)
+    variables_layout.setContentsMargins(0, 0, 0, 0)
+    variables_layout.setSpacing(0)
 
-    vars_action_row = QHBoxLayout()
-    vars_action_row.setContentsMargins(0, 0, 0, 0)
-    vars_action_row.setSpacing(12)
-    variables_layout.addLayout(vars_action_row)
-
-    w.vars_blocked_hint = QLabel(
-        tr(
-            "controls.variables.disabled_hint",
-            default="Please load a dataset in Step 1 to select variables.",
-        )
+    # 1. Row: Select Variables
+    row1, w.vars_target_title, w.vars_target_subtitle = create_apple_settings_row(
+        right_widget=w.vars_button,
+        title_text=tr("controls.variables.row1_title", default="Target & Features"),
+        subtitle_text=tr("controls.variables.row1_subtitle", default="Requires dataset to be loaded first"),
+        show_bottom_line=True
     )
+    
+    # Selection badge goes into the subtitle dynamically, but we keep the label reference for qt_app
+    w.selection_label.setVisible(False)
+    variables_layout.addWidget(w.selection_label) # Keep it hidden but in layout to not break qt_app logic
+
+    # Optional hint area (kept for compatibility with older controller logic)
+    w.vars_blocked_hint = QLabel("")
     w.vars_blocked_hint.setObjectName("hintLabel")
     w.vars_blocked_hint.setWordWrap(True)
+    w.vars_blocked_hint.setVisible(False)
+    variables_layout.addWidget(w.vars_blocked_hint)
 
-    vars_action_row.addWidget(w.vars_button)
-    vars_action_row.addWidget(w.vars_blocked_hint)
-    vars_action_row.addStretch(1)
-    vars_action_row.addWidget(w.studio_btn)
+    variables_layout.addWidget(row1)
 
-    variables_layout.addWidget(w.selection_label)
+    # 2. Row: Publication Studio
+    row2, w.vars_studio_title, w.vars_studio_subtitle = create_apple_settings_row(
+        right_widget=w.studio_btn,
+        title_text=tr("controls.variables.row2_title", default="Publication Studio"),
+        subtitle_text=tr("controls.variables.row2_subtitle", default="Configure professional names for reports"),
+        show_bottom_line=True
+    )
+    variables_layout.addWidget(row2)
 
-    fe_row = QHBoxLayout()
-    fe_row.setContentsMargins(0, 0, 0, 0)
-    fe_row.setSpacing(8)
-    fe_row.addWidget(w.fe_checkbox)
-    fe_row.addWidget(w.fe_info_btn)
-    fe_row.addStretch(1)
-    variables_layout.addLayout(fe_row)
+    # 3. Row: Feature Engineering
+    w.fe_checkbox.setText("")  # Remove text, make it a simple toggle
+    w.fe_checkbox.setObjectName("toggleSwitch")
+    row3, w.fe_title, w.fe_subtitle = create_apple_settings_row(
+        right_widget=w.fe_checkbox,
+        title_text=tr("controls.variables.row3_title", default="Feature Engineering"),
+        subtitle_text=tr("controls.variables.row3_subtitle", default="Automatically imputes missing values and scales numeric columns"),
+        show_bottom_line=False
+    )
+    variables_layout.addWidget(row3)
+
     config_card_layout.addWidget(w.variables_card)
+    config_card_layout.addSpacing(16)
 
     # Validation card
     w.validation_card = QFrame()
-    w.validation_card.setObjectName("summaryCard")
+    w.validation_card.setObjectName("appleCard")
     validation_layout = QVBoxLayout(w.validation_card)
-    validation_layout.setContentsMargins(16, 16, 16, 16)
-    validation_layout.setSpacing(10)
+    validation_layout.setContentsMargins(0, 0, 0, 0)
+    validation_layout.setSpacing(0)
 
-    w.validation_title = QLabel("Validation Settings")
-    w.validation_title.setObjectName("cardTitle")
-    validation_layout.addWidget(w.validation_title)
+    # 4. Row: CV Method
+    w.cv_mode_combo.setMinimumWidth(200)
+    w.cv_mode_combo.setMaximumWidth(200)
+    row4, w.cv_method_title, w.cv_method_subtitle = create_apple_settings_row(
+        right_widget=w.cv_mode_combo,
+        title_text=tr("controls.validation.row1_title", default="Validation Method"),
+        subtitle_text=tr("controls.validation.row1_subtitle", default="Select cross-validation strategy"),
+        show_bottom_line=True
+    )
+    validation_layout.addWidget(row4)
 
-    form = QFormLayout()
-    form.setContentsMargins(0, 0, 0, 0)
-    form.setHorizontalSpacing(12)
-    form.setVerticalSpacing(10)
-    try:
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-    except Exception:
-        pass
-    try:
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    except Exception:
-        pass
+    # 5. Row: CV Folds
+    row5, w.cv_folds_title, w.cv_folds_subtitle = create_apple_settings_row(
+        right_widget=w.cv_spin,
+        title_text=tr("controls.validation.row2_title", default="Number of Folds"),
+        subtitle_text=tr("controls.validation.row2_subtitle", default="For K-Fold validation splits"),
+        show_bottom_line=False
+    )
+    validation_layout.addWidget(row5)
 
-    method_label = QLabel("Method:")
-    method_label.setMinimumWidth(120)
-    method_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-    folds_label = QLabel("Number of folds:")
-    folds_label.setMinimumWidth(120)
-    folds_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-    form.addRow(method_label, w.cv_mode_combo)
-    form.addRow(folds_label, w.cv_spin)
-    validation_layout.addLayout(form)
-    validation_layout.addStretch(1)
     config_card_layout.addWidget(w.validation_card)
     config_card_layout.addStretch(1)
 
