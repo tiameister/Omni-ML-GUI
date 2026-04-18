@@ -3264,6 +3264,12 @@ class MLTrainerApp(QMainWindow):
                 lst = c.model_selected_list
                 lst.clear()
 
+                # Import model descriptions
+                try:
+                    from models.model_descriptions import MODEL_DESCRIPTIONS
+                except Exception:
+                    MODEL_DESCRIPTIONS = {}
+
                 for name in sorted(selected):
                     item = QListWidgetItem("")
                     row = QWidget()
@@ -3272,7 +3278,10 @@ class MLTrainerApp(QMainWindow):
                     row_layout.setSpacing(6)
 
                     label = QLabel(str(name))
-                    label.setToolTip(str(name))
+                    # Set tooltip to model description if available
+                    desc = MODEL_DESCRIPTIONS.get(str(name), str(name))
+                    label.setToolTip(desc)
+                    item.setToolTip(desc)
 
                     btn = QPushButton("×")
                     btn.setObjectName("removeChip")
