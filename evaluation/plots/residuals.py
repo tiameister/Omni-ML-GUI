@@ -31,12 +31,16 @@ def plot_residuals(
     pipe,
     X,
     y,
-    outdir: str):
+    outdir: str,
+    preds=None,
+    cv=5):
     out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
-        from sklearn.model_selection import cross_val_predict
-        preds = cross_val_predict(pipe, X, y, cv=5, n_jobs=-1)
+        if preds is None:
+            from sklearn.model_selection import cross_val_predict
+
+            preds = cross_val_predict(pipe, X, y, cv=cv, n_jobs=-1)
         resid = y - preds
         
         # Calculate true statistics before sampling plot rendering
@@ -75,12 +79,16 @@ def plot_residual_distribution(
     pipe,
     X,
     y,
-    outdir: str):
+    outdir: str,
+    preds=None,
+    cv=5):
     out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
-        from sklearn.model_selection import cross_val_predict
-        preds = cross_val_predict(pipe, X, y, cv=5, n_jobs=-1)
+        if preds is None:
+            from sklearn.model_selection import cross_val_predict
+
+            preds = cross_val_predict(pipe, X, y, cv=cv, n_jobs=-1)
         resid = y - preds
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.histplot(resid, bins=30, stat='density', color='skyblue', edgecolor='black', alpha=0.6, ax=ax)
@@ -106,12 +114,16 @@ def plot_qq(
     pipe,
     X,
     y,
-    outdir: str):
+    outdir: str,
+    preds=None,
+    cv=5):
     out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
-        from sklearn.model_selection import cross_val_predict
-        preds = cross_val_predict(pipe, X, y, cv=5, n_jobs=-1)
+        if preds is None:
+            from sklearn.model_selection import cross_val_predict
+
+            preds = cross_val_predict(pipe, X, y, cv=cv, n_jobs=-1)
         resid = y - preds
         (osm, osr), (slope, intercept, r) = stats.probplot(resid, dist='norm')
         r2 = r**2

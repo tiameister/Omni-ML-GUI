@@ -87,6 +87,7 @@ def run_training(
         persist_outputs=bool(persist_outputs),
         persist_run_tag=persist_run_tag,
         fe_enabled=bool(getattr(state, "fe_enabled", False)),
+        fe_config=getattr(state, "fe_config", None),
         feature_value_labels=feature_value_labels,
         shap_settings=shap_settings,
         optional_scripts=optional_scripts,

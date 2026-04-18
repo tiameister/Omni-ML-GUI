@@ -265,7 +265,9 @@ def apply_translations(w):
     w.dev_tabs.setTabText(0, tr("controls.dialogs.activity", default="Activity"))
     w.dev_tabs.setTabText(1, tr("controls.dialogs.notifications", default="Notifications"))
     w.dev_tabs.setTabText(2, tr("controls.dialogs.jobs", default="Jobs"))
-    w.results_dialog.setWindowTitle(tr("controls.dialogs.results_hub", default="Results Hub"))
+    # Legacy compatibility: results are now embedded in the right panel, not always a dialog.
+    if hasattr(w, "results_dialog"):
+        w.results_dialog.setWindowTitle(tr("controls.dialogs.results_hub", default="Results Hub"))
 
 
 def build_layout():
@@ -343,8 +345,8 @@ def build_layout():
         w.cv_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
     except Exception:
         pass
-    w.cv_spin.setMinimumWidth(80)
-    w.cv_spin.setMaximumWidth(80)
+    w.cv_spin.setMinimumWidth(60)
+    w.cv_spin.setMaximumWidth(60)
     w.cv_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
     w.cv_spin.setToolTip("Folds value is changed by arrows or keyboard. Mouse wheel is disabled.")
     w.cv_spin.setObjectName("cvFoldsSpin")
@@ -525,8 +527,23 @@ def build_layout():
     # 3. Row: Feature Engineering
     w.fe_checkbox.setText("")  # Remove text, make it a simple toggle
     w.fe_checkbox.setObjectName("toggleSwitch")
+    
+    # We will add a Setup/Config button below it or next to it.
+    w.fe_setup_btn = QPushButton("Customize...")
+    w.fe_setup_btn.setObjectName("actionButton")
+    w.fe_setup_btn.setMinimumWidth(80)
+    w.fe_setup_btn.setVisible(False) # show when checked
+    
+    fe_controls_lay = QHBoxLayout()
+    fe_controls_lay.setContentsMargins(0,0,0,0)
+    fe_controls_lay.addWidget(w.fe_setup_btn)
+    fe_controls_lay.addWidget(w.fe_checkbox)
+    
+    fe_control_widget = QWidget()
+    fe_control_widget.setLayout(fe_controls_lay)
+    
     row3, w.fe_title, w.fe_subtitle = create_apple_settings_row(
-        right_widget=w.fe_checkbox,
+        right_widget=fe_control_widget,
         title_text=tr("controls.variables.row3_title", default="Feature Engineering"),
         subtitle_text=tr("controls.variables.row3_subtitle", default="Automatically imputes missing values and scales numeric columns"),
         show_bottom_line=False
@@ -669,55 +686,6 @@ def build_layout():
     action_row.addWidget(w.runtime_hint_label, 0, Qt.AlignmentFlag.AlignVCenter)
     action_row.addWidget(w.cancel_button, 0)
     run_card_layout.addLayout(action_row)
-
-    # Placeholder dashboard (visible even before training)
-    w.skeleton_panel = QWidget()
-    skeleton_grid = QGridLayout(w.skeleton_panel)
-    skeleton_grid.setContentsMargins(0, 0, 0, 0)
-    skeleton_grid.setHorizontalSpacing(12)
-    skeleton_grid.setVerticalSpacing(12)
-
-    def _make_skeleton(title: str, height: int = 92):
-        card = QFrame()
-        card.setObjectName("skeletonCard")
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(14, 12, 14, 12)
-        lay.setSpacing(10)
-        t = QLabel(title)
-        t.setObjectName("skeletonTitle")
-        box = QFrame()
-        box.setObjectName("skeletonBox")
-        box.setMinimumHeight(height)
-        lay.addWidget(t)
-        lay.addWidget(box)
-        return card
-
-    sk1 = _make_skeleton("Accuracy / R²", height=280)
-    sk2 = _make_skeleton("Residuals", height=280)
-    sk3 = _make_skeleton("Feature Importance", height=220)
-    sk4 = _make_skeleton("Diagnostics", height=220)
-    skeleton_grid.addWidget(sk1, 0, 0)
-    skeleton_grid.addWidget(sk2, 0, 1)
-    skeleton_grid.addWidget(sk3, 1, 0)
-    skeleton_grid.addWidget(sk4, 1, 1)
-    skeleton_grid.setColumnStretch(0, 1)
-    skeleton_grid.setColumnStretch(1, 1)
-    run_card_layout.addWidget(w.skeleton_panel)
-
-    # Hidden action buttons: exposed via top menu for a cleaner workflow surface
-    w.customize_plots_btn = QPushButton("Customize Plots…")
-    w.shap_settings_btn = QPushButton("SHAP Settings…")
-    w.customize_plots_btn.setVisible(False)
-    w.shap_settings_btn.setVisible(False)
-
-    w.open_output_btn = QPushButton("Open Output Folder")
-    w.open_output_btn.setObjectName("ghostButton")
-    w.reset_session_btn = QPushButton("Reset Session")
-    w.reset_session_btn.setObjectName("ghostButton")
-    w.open_output_btn.setVisible(False)
-    w.reset_session_btn.setVisible(False)
-
-    # Progress and status (hidden until used)
     w.progress_panel = QFrame()
     w.progress_panel.setObjectName("progressPanel")
     progress_layout = QVBoxLayout(w.progress_panel)
@@ -769,6 +737,54 @@ def build_layout():
     w.progress_panel.setVisible(False)
     run_card_layout.addWidget(w.progress_panel)
 
+    # Placeholder dashboard (visible even before training)
+    w.skeleton_panel = QWidget()
+    skeleton_grid = QGridLayout(w.skeleton_panel)
+    skeleton_grid.setContentsMargins(0, 0, 0, 0)
+    skeleton_grid.setHorizontalSpacing(12)
+    skeleton_grid.setVerticalSpacing(12)
+
+    def _make_skeleton(title: str, height: int = 92):
+        card = QFrame()
+        card.setObjectName("skeletonCard")
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(10)
+        t = QLabel(title)
+        t.setObjectName("skeletonTitle")
+        box = QFrame()
+        box.setObjectName("skeletonBox")
+        box.setMinimumHeight(height)
+        lay.addWidget(t)
+        lay.addWidget(box)
+        return card
+
+    sk1 = _make_skeleton("Accuracy / R²", height=280)
+    sk2 = _make_skeleton("Residuals", height=280)
+    sk3 = _make_skeleton("Feature Importance", height=220)
+    sk4 = _make_skeleton("Diagnostics", height=220)
+    skeleton_grid.addWidget(sk1, 0, 0)
+    skeleton_grid.addWidget(sk2, 0, 1)
+    skeleton_grid.addWidget(sk3, 1, 0)
+    skeleton_grid.addWidget(sk4, 1, 1)
+    skeleton_grid.setColumnStretch(0, 1)
+    skeleton_grid.setColumnStretch(1, 1)
+    run_card_layout.addWidget(w.skeleton_panel)
+
+    # Hidden action buttons: exposed via top menu for a cleaner workflow surface
+    w.customize_plots_btn = QPushButton("Customize Plots…")
+    w.shap_settings_btn = QPushButton("SHAP Settings…")
+    w.customize_plots_btn.setVisible(False)
+    w.shap_settings_btn.setVisible(False)
+
+    w.open_output_btn = QPushButton("Open Output Folder")
+    w.open_output_btn.setObjectName("ghostButton")
+    w.reset_session_btn = QPushButton("Reset Session")
+    w.reset_session_btn.setObjectName("ghostButton")
+    w.open_output_btn.setVisible(False)
+    w.reset_session_btn.setVisible(False)
+
+    # Progress and status (hidden until used)
     w.feedback_focus_label = QLabel("Now: Ready\nNext: Load dataset\nBlockers: None")
     w.feedback_focus_label.setObjectName("footerLabel")
     w.feedback_focus_label.setWordWrap(True)
@@ -1065,13 +1081,10 @@ def build_layout():
     footer_layout.addWidget(w.feedback_event_label, 1)
     outer_layout.addWidget(w.footer_bar, 0)
 
-    # Convert right_panel to a standalone dialog
-    w.results_dialog = QDialog(w)
-    w.results_dialog.setWindowTitle(tr("controls.dialogs.results_hub", default="Results Hub"))
-    w.results_dialog.resize(900, 700)
-    dialog_layout = QVBoxLayout(w.results_dialog)
-    dialog_layout.setContentsMargins(0, 0, 0, 0)
-    dialog_layout.addWidget(right_panel)
+    # Instead of an external popup dialog, embed the results right into Step 4
+    w.right_panel = right_panel
+    w.right_panel.setVisible(False)
+    run_card_layout.addWidget(w.right_panel)
 
     apply_translations(w)
     w.apply_translations = lambda: apply_translations(w)

@@ -67,6 +67,21 @@ FEATURE_NAME_MAP: dict[str, str] = {}
 SHAP_ALWAYS_INCLUDE: list[str] = []
 SHAP_BEESWARM_TRIM_PCT = _to_float("SHAP_BEESWARM_TRIM_PCT", 1.0, 0.0, 50.0)
 
+# SHAP feature dependence / correlation handling
+_shap_dep_raw = os.environ.get("SHAP_DEPENDENCE_MODE", "interventional")
+_shap_dep_raw = str(_shap_dep_raw).strip().lower()
+if _shap_dep_raw in {"interventional", "independent", "causal"}:
+    SHAP_DEPENDENCE_MODE = "interventional"
+elif _shap_dep_raw in {"partition", "correlation", "correlated", "grouped"}:
+    SHAP_DEPENDENCE_MODE = "partition"
+elif _shap_dep_raw in {"tree_path_dependent", "treepath", "legacy"}:
+    SHAP_DEPENDENCE_MODE = "tree_path_dependent"
+else:
+    raise ConfigError(
+        "SHAP_DEPENDENCE_MODE must be one of: interventional/independent, partition/correlation, tree_path_dependent"
+        f" (got '{_shap_dep_raw}')"
+    )
+
 _shap_min_cap_raw = os.environ.get("SHAP_BEESWARM_MIN_CAP")
 if _shap_min_cap_raw is None or str(_shap_min_cap_raw).strip() == "":
     SHAP_BEESWARM_MIN_CAP = None

@@ -149,6 +149,18 @@ def get_feature_names_from_pipe(pipe: Pipeline, num_cols: List[str] | None = Non
         # No preprocessor; assume original columns are final names
         return list(getattr(pipe, "feature_names_in_", []))
 
+    # Preferred: let sklearn compute the final output feature names (includes
+    # feature engineering expansions, OHE names, etc.).
+    try:
+        if hasattr(ct, "get_feature_names_out"):
+            names_out = ct.get_feature_names_out()
+            if names_out is not None:
+                names_list = [str(n) for n in list(names_out)]
+                if names_list:
+                    return names_list
+    except Exception as exc:
+        LOGGER.debug("ct.get_feature_names_out() failed; falling back: %s", exc)
+
     # Derive num/cat columns from ColumnTransformer if not provided
     derived_num: List[str] = []
     derived_cat: List[str] = []

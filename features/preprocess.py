@@ -11,7 +11,7 @@ def _to_uniform_string(X):
         X = pd.DataFrame(X)
     return X.astype(str)
 
-def build_preprocessor(num_cols, cat_cols, ordinal_cols=None, binary_cols=None, fe_enabled=False):
+def build_preprocessor(num_cols, cat_cols, ordinal_cols=None, binary_cols=None, fe_enabled=False, fe_config=None):
     """
     Returns a ColumnTransformer with:
     - numeric: impute + StandardScaler
@@ -28,7 +28,7 @@ def build_preprocessor(num_cols, cat_cols, ordinal_cols=None, binary_cols=None, 
     cat_other = [c for c in cat_cols if c not in set(ordinal_cols) and c not in set(binary_cols)]
 
     numeric_pipeline = Pipeline([
-        ("fe", FeatureEngineeringTransformer(fe_enabled=fe_enabled)),
+        ("fe", FeatureEngineeringTransformer(fe_enabled=fe_enabled, config=(fe_config or {}))),
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler())
     ])

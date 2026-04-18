@@ -840,6 +840,34 @@ class ShapSettingsDialog(QDialog):
         inc_row.addWidget(self.include_edit)
         root.addLayout(inc_row)
 
+        # Feature dependence / correlation handling
+        dep_row = QHBoxLayout()
+        dep_row.addWidget(QLabel(tr("dialogs.shap_settings.dependence_label", default="Feature dependence:")))
+        self.dep_combo = QComboBox()
+        self.dep_combo.addItem(
+            tr(
+                "dialogs.shap_settings.dependence_interventional",
+                default="Interventional (independent)",
+            ),
+            "interventional",
+        )
+        self.dep_combo.addItem(
+            tr(
+                "dialogs.shap_settings.dependence_partition",
+                default="Correlation-aware (partition)",
+            ),
+            "partition",
+        )
+        self.dep_combo.setToolTip(
+            tr(
+                "dialogs.shap_settings.dependence_tip",
+                default="Interventional assumes features are independent (fast, common). Partition groups correlated features for correlation-aware attributions (slower, often preferred when collinearity is high).",
+            )
+        )
+        dep_row.addWidget(self.dep_combo)
+        dep_row.addStretch()
+        root.addLayout(dep_row)
+
         self.preview_label = QLabel("")
         self.preview_label.setObjectName("hintLabel")
         self.preview_label.setWordWrap(True)
@@ -873,6 +901,17 @@ class ShapSettingsDialog(QDialog):
                 self.var_spin.setEnabled(False)
             self.include_edit.setText(str(settings.value('shap/always_include', '') or ''))
 
+        # dependence mode (defaults to interventional)
+        try:
+            dep_mode = str(settings.value('shap/dependence_mode', 'interventional') or 'interventional')
+        except Exception:
+            dep_mode = 'interventional'
+        dep_mode = dep_mode.strip().lower()
+        dep_idx = self.dep_combo.findData(dep_mode)
+        if dep_idx < 0:
+            dep_idx = self.dep_combo.findData('interventional')
+        self.dep_combo.setCurrentIndex(max(0, dep_idx))
+
         self.var_chk.toggled.connect(self.var_spin.setEnabled)
         self.rb_all.toggled.connect(lambda _checked: self._sync_topn_controls())
         self.rb_topn.toggled.connect(lambda _checked: self._sync_topn_controls())
@@ -880,6 +919,7 @@ class ShapSettingsDialog(QDialog):
         self.topn_spin.valueChanged.connect(lambda _v: self._update_preview())
         self.var_spin.valueChanged.connect(lambda _v: self._update_preview())
         self.include_edit.textChanged.connect(lambda _t: self._update_preview())
+        self.dep_combo.currentIndexChanged.connect(lambda _i: self._update_preview())
         self._sync_topn_controls()
         self._update_preview()
 
@@ -924,13 +964,16 @@ class ShapSettingsDialog(QDialog):
             )
         else:
             inc_txt = tr("dialogs.shap_settings.include_none", default="always include: none")
+
+        dep_txt = str(self.dep_combo.currentText() or "")
         self.preview_label.setText(
             tr(
                 "dialogs.shap_settings.current_profile",
-                default="Current profile -> {mode}, {var}, {include}",
+                default="Current profile -> {mode}, {var}, {include}, {dep}",
                 mode=mode_txt,
                 var=var_txt,
                 include=inc_txt,
+                dep=dep_txt,
             )
         )
 
@@ -946,6 +989,10 @@ class ShapSettingsDialog(QDialog):
         if self.var_chk.isChecked():
             s.setValue('shap/var_thresh', float(self.var_spin.value()))
         s.setValue('shap/always_include', self.include_edit.text())
+        try:
+            s.setValue('shap/dependence_mode', str(self.dep_combo.currentData() or 'interventional'))
+        except Exception:
+            s.setValue('shap/dependence_mode', 'interventional')
         try:
             s.sync()
         except Exception:
@@ -963,6 +1010,11 @@ class ShapSettingsDialog(QDialog):
         self.var_spin.setValue(1e-8)
         self.var_spin.setEnabled(False)
         self.include_edit.clear()
+        try:
+            dep_idx = self.dep_combo.findData('interventional')
+            self.dep_combo.setCurrentIndex(max(0, dep_idx))
+        except Exception:
+            pass
         self._sync_topn_controls()
         self._update_preview()
 

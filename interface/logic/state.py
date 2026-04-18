@@ -19,6 +19,14 @@ class AppState:
         self.features = None
         self.model_checks = {}     # set by UI on init
         self.fe_enabled = False
+        self.fe_config = {
+            "transform": "yeo-johnson",
+            "missing_indicators": True,
+            "outliers": "winsorize_1_99",
+            "poly_features": False,
+            "poly_degree": 2,
+            "poly_max": 50
+        }
         # Optional pre-training Publication Studio profile (naming/value rules, metadata).
         self.studio_profile = {}
         # SSOT: Execution State
@@ -40,7 +48,8 @@ class AppState:
             LOGGER.info("GUI loaded dataset '%s' via '%s' shape=%s", path, source, tuple(df.shape))
             return df
         except Exception as exc:
-            raise RuntimeError(f"Could not parse dataset: {path}\n{exc}") from exc
+            # Re-raise the exception with a clean message to show in the UI dialog
+            raise RuntimeError(f"Could not load dataset:\n\n{exc}") from exc
 
 
 

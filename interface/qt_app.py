@@ -40,6 +40,7 @@ from interface.widgets.dialogs import (
     CommandPaletteDialog,
     PublicationExportDialog,
 )
+from interface.widgets.fe_studio import FeatureEngineeringStudioDialog
 from interface.widgets.checkboxes import get_plot_pages, get_optional_script_label_map
 from data.file_types import SUPPORTED_DATASET_EXTENSIONS
 from config import OUTPUT_DIR, RUN_TAG
@@ -628,6 +629,7 @@ class MLTrainerApp(QMainWindow):
         c.fe_checkbox.toggled.connect(self._on_toggle_feature_engineering)
         # Preview button
         c.preview_button.clicked.connect(self._on_preview)
+        c.fe_setup_btn.clicked.connect(self._on_fe_settings)
         # Customize plots
         c.customize_plots_btn.clicked.connect(self._on_customize_plots)
         # SHAP settings
@@ -2543,7 +2545,7 @@ class MLTrainerApp(QMainWindow):
             self._push_notification("warning", partial_msg)
             self.statusBar().showMessage(partial_msg)
 
-    def _push_notification(self, level: str, message: str):
+    def _push_notification(self, level: str, message: str, **kwargs):
         level_norm = str(level or "info").upper()
         if level_norm not in {"INFO", "SUCCESS", "WARNING", "ERROR"}:
             level_norm = "INFO"
@@ -3176,22 +3178,24 @@ class MLTrainerApp(QMainWindow):
 
     def _is_results_dialog_visible(self) -> bool:
         c = self.controls
-        if not hasattr(c, "results_dialog"):
-            return bool(self._right_panel_visible)
-        return bool(c.results_dialog.isVisible())
+        if hasattr(c, "right_panel"):
+            return bool(c.right_panel.isVisible())
+        return bool(self._right_panel_visible)
 
     def _set_results_dialog_visible(self, visible: bool):
         c = self.controls
         target_visible = bool(visible)
         self._right_panel_visible = target_visible
 
-        if hasattr(c, "results_dialog"):
+        if hasattr(c, "right_panel"):
             if target_visible:
-                c.results_dialog.show()
-                c.results_dialog.raise_()
-                c.results_dialog.activateWindow()
+                c.right_panel.setVisible(True)
+                if hasattr(c, "skeleton_panel"):
+                    c.skeleton_panel.setVisible(False)
             else:
-                c.results_dialog.hide()
+                c.right_panel.setVisible(False)
+                if hasattr(c, "skeleton_panel"):
+                    c.skeleton_panel.setVisible(True)
 
         self._sync_header_panel_buttons()
 
@@ -3660,7 +3664,7 @@ class MLTrainerApp(QMainWindow):
                 blockers=tr("controls.feedback.blockers_none", default="None"),
             )
             self._set_guided_step_state(has_data=True, has_variables=True, has_models=has_models)
-            self._go_to_step(2)
+            # self._go_to_step(2)  # Avoid automatic jump so user can configure Feature Engineering in Step 2
             self._update_runtime_hint()
             self._sync_menu_actions()
             self._push_notification(
@@ -3931,17 +3935,23 @@ class MLTrainerApp(QMainWindow):
                 "var_enabled": qsettings.value("shap/var_enabled", "false"),
                 "var_thresh": qsettings.value("shap/var_thresh", ""),
                 "always_include": qsettings.value("shap/always_include", ""),
+                "dependence_mode": qsettings.value("shap/dependence_mode", "interventional"),
             }
         except Exception:
             shap_settings = {}
 
         # Safe cleanup of any previous dead thread to plug memory leaks
-        if getattr(self, '_thread', None) is not None:
-            self._thread.quit()
-            self._thread.wait()
-            self._thread.deleteLater()
-        if getattr(self, '_worker', None) is not None:
-            self._worker.deleteLater()
+        try:
+            if getattr(self, '_thread', None) is not None:
+                # If the C++ object isn't deleted, this works. Otherwise it raises RuntimeError.
+                if self._thread.isRunning():
+                    self._thread.quit()
+                    self._thread.wait()
+        except RuntimeError:
+            pass # C++ object already deleted by deleteLater
+            
+        self._thread = None
+        self._worker = None
         
         self._thread = QThread(self)
         self._worker = _TrainWorker(
@@ -4242,7 +4252,6 @@ class MLTrainerApp(QMainWindow):
             c.status_label.setText(
                 tr("status.training_progress", default="Training progress: {current}/{total} ({pct}%)", current=current, total=total, pct=pct)
             )
-            c.status_label.setVisible(True)
             c.kpi_run_value.setText(tr("status.kpi.running_pct", default="Running ({pct}%)", pct=pct))
         QApplication.processEvents()
 
@@ -4280,15 +4289,12 @@ class MLTrainerApp(QMainWindow):
         # Update mini status label when receiving START/DONE logs
         if text.startswith("START:") or text.startswith("Start"):
             c.status_label.setText(text)
-            c.status_label.setVisible(True)
             self.statusBar().showMessage(text)
         elif text.startswith("DONE:") or text.startswith("[Done]"):
             c.status_label.setText(text)
-            c.status_label.setVisible(True)
             self.statusBar().showMessage(text)
         elif text.startswith("[Warning]") or text.startswith("Warning"):
             c.status_label.setText(text)
-            c.status_label.setVisible(True)
             self.statusBar().showMessage(text)
 
     def _on_cancel(self):
@@ -4308,11 +4314,63 @@ class MLTrainerApp(QMainWindow):
             self._refresh_job_table()
         self._push_notification("warning", tr("notifications.cancellation_requested", default="Cancellation requested for current run."))
 
+    def _on_fe_settings(self):
+        c = self.controls
+        dlg = FeatureEngineeringStudioDialog(self.state.fe_config, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_config = dlg.get_config()
+            if new_config != self.state.fe_config:
+                self.state.fe_config = new_config
+                self._capture_snapshot(clear_redo=True)
+
+            if dlg.export_requested and self.state.dataset_path:
+                from features.feature_engineering import generate_static_fe_dataset
+                from PyQt6.QtWidgets import QMessageBox
+                import pandas as pd
+                import os
+                
+                try:
+                    df = pd.read_csv(self.state.dataset_path)
+                except Exception as e:
+                    QMessageBox.warning(self, tr("error.dataset_load", default="Dataset Load Error"), f"Could not load dataset for FE static export.\n{e}")
+                    return
+                    
+                target = getattr(self.state, "target_col", None)
+                out_dir = os.path.dirname(self.state.dataset_path)
+                base_name = os.path.splitext(os.path.basename(self.state.dataset_path))[0]
+                out_file = f"{base_name}_engineered.csv"
+                
+                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                try:
+                    out_path = generate_static_fe_dataset(df, self.state.fe_config, target, out_dir, out_file)
+                    self.statusBar().showMessage(f"Static Engineered Dataset Generated: {out_file}", 6000)
+                    self._push_notification("success", f"Static feature engineering file generated: {out_file}", title="FE Success")
+                    
+                    # Switch immediately to the generated dataset
+                    self.controls.path_edit.setText(out_path)
+                    
+                    # Call load button to kick off ingestion pipeline
+                    self._on_load()
+                    
+                    # Turn off 'Feature Engineering' checkbox since it's now statically embedded
+                    if hasattr(self.controls, "fe_checkbox"):
+                        self.controls.fe_checkbox.setChecked(False)
+                        
+                except Exception as e:
+                    QMessageBox.critical(self, "Export Failed", f"Static Dataset generation failed:\n{e}")
+                finally:
+                    QApplication.restoreOverrideCursor()
+
     def _on_toggle_feature_engineering(self, checked: bool):
         # Feature engineering is applied in the training pipeline.
         self.state.fe_enabled = bool(checked)
         self._sync_menu_actions()
         self._update_runtime_hint()
+        c = self.controls
+        
+        if hasattr(c, "fe_setup_btn"):
+            c.fe_setup_btn.setVisible(checked)
+            
         if not checked:
             self.statusBar().showMessage(tr("status.feature_engineering_disabled", default="Feature Engineering disabled"))
             self._push_notification("info", tr("notifications.feature_engineering_disabled", default="Feature engineering disabled."))

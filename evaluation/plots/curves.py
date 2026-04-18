@@ -37,12 +37,13 @@ def plot_learning_curve(
     pipe,
     X,
     y,
-    outdir: str):
+    outdir: str,
+    cv=5):
     out_eval = os.path.join(outdir, '3_Manuscript_Figures', model_name)
     os.makedirs(out_eval, exist_ok=True)
     try:
         train_sizes, train_scores, cv_scores = learning_curve(
-            pipe, X, y, cv=5, scoring='r2', n_jobs=-1,
+            pipe, X, y, cv=cv, scoring='r2', n_jobs=-1,
             train_sizes=[0.1, 0.33, 0.55, 0.78, 1.0]
         )
         train_mean = train_scores.mean(axis=1)
@@ -106,17 +107,25 @@ def plot_predictions_vs_actual(
     pipe,
     X,
     y,
-    outdir: str):
+    outdir: str,
+    preds=None,
+    cv=5):
     out_eval = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_eval, exist_ok=True)
     try:
-        from sklearn.model_selection import cross_val_predict
-        preds = cross_val_predict(pipe, X, y, cv=5, n_jobs=-1)
+        if preds is None:
+            from sklearn.model_selection import cross_val_predict
+
+            preds = cross_val_predict(pipe, X, y, cv=cv, n_jobs=-1)
     except Exception as e:
         with open(os.path.join(outdir, "Run_Log_and_Warnings.md"), 'a', encoding='utf-8') as f:
             f.write(f"\n### {model_name} Prediction Failed\n```text\nPrediction failed: {e}\n```\n")
         return
-    df_pa = pd.DataFrame({'actual': y, 'predicted': preds})
+
+    # Ensure index alignment does not corrupt exports.
+    y_arr = np.asarray(y)
+    preds_arr = np.asarray(preds)
+    df_pa = pd.DataFrame({'actual': y_arr, 'predicted': preds_arr})
     try:
         df_pa.to_excel(os.path.join(out_eval, f"{model_name}_predictions_vs_actual.xlsx"), index=False)
     except Exception as e:
@@ -124,15 +133,15 @@ def plot_predictions_vs_actual(
             f.write(f"\n### {model_name} Predictions Excel Warning\n```text\n{e}\n```\n")
     try:
         from sklearn.metrics import r2_score, mean_squared_error
-        r2 = r2_score(y, preds)
+        r2 = r2_score(y_arr, preds_arr)
         try:
             from sklearn.metrics import root_mean_squared_error
-            rmse_val = root_mean_squared_error(y, preds)
+            rmse_val = root_mean_squared_error(y_arr, preds_arr)
         except ImportError:
-            rmse_val = mean_squared_error(y, preds, squared=False)
+            rmse_val = mean_squared_error(y_arr, preds_arr, squared=False)
         fig, ax = plt.subplots(figsize=(7.8, 7.2))
-        ax.scatter(y, preds, alpha=0.5, c='tab:green', edgecolor='none')
-        lims = [min(float(y.min()), float(preds.min())), max(float(y.max()), float(preds.max()))]
+        ax.scatter(y_arr, preds_arr, alpha=0.5, c='tab:green', edgecolor='none')
+        lims = [min(float(np.min(y_arr)), float(np.min(preds_arr))), max(float(np.max(y_arr)), float(np.max(preds_arr)))]
         ax.plot(lims, lims, 'r--', linewidth=1)
         text = f'$R^2$={r2:.2f}\nRMSE={rmse_val:.2f}'
         ax.text(0.05, 0.95, text, transform=ax.transAxes,

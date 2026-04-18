@@ -98,7 +98,7 @@ def _read_excel_safely(path: str) -> Tuple[pd.DataFrame, str]:
             "'xlrd' for legacy .xls, and 'pyxlsb' for .xlsb files."
         ) from exc
     except Exception as exc:
-        raise DataLoadError(f"Could not parse Excel dataset '{path}': {exc}") from exc
+        raise DataLoadError(f"Could not parse '{Path(path).name}':\n\n{exc}") from exc
 
 
 def _read_csv_with_sniffing(path: str) -> Tuple[pd.DataFrame, str]:
@@ -130,8 +130,13 @@ def _read_csv_with_sniffing(path: str) -> Tuple[pd.DataFrame, str]:
         LOGGER.warning("Loaded CSV '%s' using fallback auto separator; prior attempts failed", path)
         return df, "auto"
     except Exception as exc:
-        details = " | ".join(attempts[-8:]) if attempts else "no parser attempts recorded"
-        raise DataLoadError(f"Could not parse CSV '{path}'. Attempts: {details}") from exc
+        filename = Path(path).name
+        details = "\n  • ".join(attempts[-4:]) if attempts else "no parser attempts recorded"
+        raise DataLoadError(
+            f"Failed to read '{filename}'.\n\n"
+            "The file might be empty, corrupted, or use an unsupported format.\n"
+            f"Last fallback attempts:\n  • {details}"
+        ) from exc
 
 
 def read_dataset_safely(path: str) -> Tuple[pd.DataFrame, str]:

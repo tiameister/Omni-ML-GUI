@@ -97,6 +97,8 @@ def train_and_evaluate(
             continue
         pipe = Pipeline([("prep", preprocessor), ("model", all_models[name])])
 
+        oof_pred = None
+
         if callable(log_callback):
             _safe_call(log_callback, f"[Start] {name}", context="log_callback:start")
         if callable(model_status_callback):
@@ -172,14 +174,17 @@ def train_and_evaluate(
             elif name == "XGBoost" and XGB_OK:
                 param_grid = {"model__n_estimators": [200, 400], "model__learning_rate": [0.05, 0.1], "model__max_depth": [4, 6]}
 
+            outer_folds = int(cv_folds or NESTED_OUTER_FOLDS)
+            inner_folds = int(NESTED_INNER_FOLDS)
+
             if y_strata is not None:
-                skf_outer = StratifiedKFold(n_splits=NESTED_OUTER_FOLDS, shuffle=True, random_state=RSTATE)
+                skf_outer = StratifiedKFold(n_splits=outer_folds, shuffle=True, random_state=RSTATE)
                 outer = list(skf_outer.split(X, y_strata))
             else:
-                outer = KFold(n_splits=NESTED_OUTER_FOLDS, shuffle=True, random_state=RSTATE)
+                outer = KFold(n_splits=outer_folds, shuffle=True, random_state=RSTATE)
             
             # GridSearchCV does cv.split(X, y), which breaks StratifiedKFold for continuous y, so we use KFold inner
-            inner = KFold(n_splits=NESTED_INNER_FOLDS, shuffle=True, random_state=RSTATE)
+            inner = KFold(n_splits=inner_folds, shuffle=True, random_state=RSTATE)
 
             if param_grid:
                 gs = GridSearchCV(pipe, param_grid=param_grid, cv=inner,
@@ -196,6 +201,20 @@ def train_and_evaluate(
                                        scoring=scoring, return_estimator=True, return_train_score=False, n_jobs=-1, pre_dispatch="2*n_jobs")
                 pipe.fit(X, y)
                 final_pipe = pipe
+
+            # Out-of-fold predictions aligned to outer CV (publication-safe diagnostics for nested mode).
+            try:
+                ests = cvres.get("estimator")
+                if ests is not None:
+                    outer_splits = outer if isinstance(outer, list) else list(outer.split(X, y))
+                    y_oof = np.full(shape=(len(y),), fill_value=np.nan, dtype=float)
+                    for (tr_idx, te_idx), est in zip(outer_splits, ests):
+                        X_te = X.iloc[te_idx] if hasattr(X, "iloc") else X[te_idx]
+                        pred = np.asarray(est.predict(X_te), dtype=float).reshape(-1)
+                        y_oof[np.asarray(te_idx, dtype=int)] = pred
+                    oof_pred = y_oof
+            except Exception:
+                oof_pred = None
 
             r2_mean = cvres["test_R2"].mean()
             mae_mean = -cvres["test_MAE"].mean()
@@ -236,7 +255,13 @@ def train_and_evaluate(
             "RMSE_train":  float(rmse_train),
             "TrainingTime": float(train_time)
         })
-        fitted[name] = {"pipe": final_pipe, "holdout": (X, y, y_hat), "cv_mode": mode, "cv_scores": per_split}
+        fitted[name] = {
+            "pipe": final_pipe,
+            "holdout": (X, y, y_hat),
+            "cv_mode": mode,
+            "cv_scores": per_split,
+            "oof_pred": oof_pred,
+        }
         if progress_callback is not None:
             _safe_call(progress_callback, idx + 1, total, context="progress_callback")
 

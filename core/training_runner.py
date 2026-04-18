@@ -10,7 +10,7 @@ from typing import Callable
 
 import pandas as pd
 
-from config import DO_SHAP, OUTPUT_DIR, RUN_TAG, SHAP_VAR_THRESH
+from config import CV_REPEATS, CV_STRATIFY, DO_SHAP, OUTPUT_DIR, RSTATE, RUN_TAG, SHAP_DEPENDENCE_MODE, SHAP_VAR_THRESH
 from utils.logger import get_logger
 from utils.paths import (
     get_run_model_dir,
@@ -171,6 +171,7 @@ def run_training(
     persist_outputs: bool = True,
     persist_run_tag: str | None = None,
     fe_enabled: bool = False,
+    fe_config: dict[str, object] | None = None,
     feature_value_labels: dict[str, dict[str, str]] | None = None,
     shap_settings: dict[str, object] | None = None,
     optional_scripts: list[tuple[str, str]] | None = None,
@@ -261,7 +262,12 @@ def run_training(
         else:
             cat_cols.append(c)
 
-    preproc = build_preprocessor(num_cols=num_cols, cat_cols=cat_cols, fe_enabled=bool(fe_enabled))
+    preproc = build_preprocessor(
+        num_cols=num_cols,
+        cat_cols=cat_cols,
+        fe_enabled=bool(fe_enabled),
+        fe_config=fe_config,
+    )
 
     def progress_callback(done: int, total: int):
         _safe_call(callbacks.progress, done, total, context="progress")
@@ -364,23 +370,6 @@ def run_training(
     except Exception:
         LOGGER.exception("Failed to persist feature selection provenance")
 
-    try:
-        run_manifest = {
-            "run_id": run_id_final,
-            "dataset_label": dataset_label,
-            "cv_mode": cv_mode,
-            "cv_folds": cv_folds,
-            "selected_models": list(selected_models or []),
-            "selected_plots": list(selected_plots or []),
-            "best_model": best,
-            "feature_engineering": bool(fe_enabled),
-            "persist_outputs": bool(persist_outputs),
-        }
-        with open(os.path.join(run_outdir, "run_manifest.json"), "w", encoding="utf-8") as f:
-            json.dump(run_manifest, f, ensure_ascii=False, indent=2)
-    except Exception:
-        LOGGER.exception("Failed to write run manifest")
-
     outdir_by_model: dict[str, str] = {}
 
     def _get_model_outdir(model_name: str) -> str:
@@ -451,6 +440,10 @@ def run_training(
         shap_var_enabled = str(shap_settings.get("var_enabled", "false")).lower() in ("true", "1", "yes")
         shap_var_thresh = float(shap_settings.get("var_thresh", SHAP_VAR_THRESH)) if shap_var_enabled else None
         shap_always_include_raw = shap_settings.get("always_include", "")
+        shap_dep_raw = shap_settings.get("dependence_mode", shap_settings.get("dependence", SHAP_DEPENDENCE_MODE))
+        shap_dependence_mode = str(shap_dep_raw or SHAP_DEPENDENCE_MODE or "interventional").strip().lower()
+        if shap_dependence_mode not in {"interventional", "partition", "tree_path_dependent"}:
+            shap_dependence_mode = str(SHAP_DEPENDENCE_MODE or "interventional").strip().lower()
         if shap_always_include_raw is None:
             shap_always_include = []
         else:
@@ -458,8 +451,123 @@ def run_training(
     except Exception:
         shap_top_n, shap_var_thresh = -1, None
         shap_always_include = []
+        shap_dependence_mode = str(SHAP_DEPENDENCE_MODE or "interventional").strip().lower()
+
+    # Persist run manifest (now includes SHAP configuration for reliability/provenance)
+    try:
+        run_manifest = {
+            "run_id": run_id_final,
+            "dataset_label": dataset_label,
+            "cv_mode": cv_mode,
+            "cv_folds": cv_folds,
+            "selected_models": list(selected_models or []),
+            "selected_plots": list(selected_plots or []),
+            "best_model": best,
+            "feature_engineering": bool(fe_enabled),
+            "persist_outputs": bool(persist_outputs),
+            "shap": {
+                "enabled": bool(DO_SHAP),
+                "dependence_mode": shap_dependence_mode,
+                "top_n": shap_top_n,
+                "var_thresh": shap_var_thresh,
+                "always_include": list(shap_always_include or []),
+            },
+        }
+        with open(os.path.join(run_outdir, "run_manifest.json"), "w", encoding="utf-8") as f:
+            json.dump(run_manifest, f, ensure_ascii=False, indent=2)
+    except Exception:
+        LOGGER.exception("Failed to write run manifest")
 
     optional_scripts = list(optional_scripts or [])
+
+    # Build regression stratification labels once so evaluation plots can mirror CV behavior.
+    y_strata = None
+    try:
+        if str(CV_STRATIFY).lower() == "deciles":
+            y_series = pd.Series(y)
+            y_strata = pd.qcut(
+                y_series.rank(method="first"),
+                q=10,
+                labels=False,
+                duplicates="drop",
+            )
+    except Exception:
+        y_strata = None
+
+    def _build_cv_splits(mode: str, *, folds: int) -> list[tuple[list[int], list[int]]] | object:
+        """Return either a reusable splitter or an explicit list of (train, test) indices."""
+        from sklearn.model_selection import (
+            KFold,
+            RepeatedKFold,
+            RepeatedStratifiedKFold,
+            StratifiedKFold,
+        )
+
+        n_splits = max(2, int(folds))
+        mode_norm = str(mode or "").strip().lower()
+        if mode_norm not in {"kfold", "repeated", "nested", "holdout"}:
+            mode_norm = "kfold"
+
+        if mode_norm in {"kfold", "nested"}:
+            if y_strata is not None:
+                splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RSTATE)
+                return list(splitter.split(X, y_strata))
+            return KFold(n_splits=n_splits, shuffle=True, random_state=RSTATE)
+
+        if mode_norm == "repeated":
+            repeats = max(1, int(CV_REPEATS))
+            if y_strata is not None:
+                splitter = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=repeats, random_state=RSTATE)
+                return list(splitter.split(X, y_strata))
+            splitter = RepeatedKFold(n_splits=n_splits, n_repeats=repeats, random_state=RSTATE)
+            return list(splitter.split(X, y))
+
+        # holdout does not use CV splits
+        return KFold(n_splits=n_splits, shuffle=True, random_state=RSTATE)
+
+    def _compute_eval_predictions(pipe_fit, *, mode: str, folds: int):
+        """Return (X_eval, y_eval, y_pred_eval, cv_for_learning_curve)."""
+        import numpy as np
+        from sklearn.base import clone
+        from sklearn.model_selection import cross_val_predict, train_test_split
+
+        mode_norm = str(mode or "").strip().lower()
+        n_splits = max(2, int(folds))
+
+        # Holdout: evaluate on test split only.
+        if mode_norm == "holdout":
+            X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=RSTATE)
+            est = clone(pipe_fit)
+            est.fit(X_tr, y_tr)
+            y_pred = est.predict(X_te)
+            cv_for_lc = _build_cv_splits("kfold", folds=n_splits)
+            return X_te, y_te, y_pred, cv_for_lc
+
+        # For CV modes, compute out-of-fold predictions once.
+        cv_obj = _build_cv_splits(mode_norm if mode_norm != "nested" else "kfold", folds=n_splits)
+
+        if mode_norm != "repeated":
+            y_pred = cross_val_predict(clone(pipe_fit), X, y, cv=cv_obj, n_jobs=-1)
+            return X, y, y_pred, cv_obj
+
+        # Repeated CV: average predictions over all test appearances.
+        splits = cv_obj if isinstance(cv_obj, list) else list(cv_obj.split(X, y))
+        pred_sum = np.zeros(len(y), dtype=float)
+        pred_count = np.zeros(len(y), dtype=int)
+        for tr_idx, te_idx in splits:
+            raise_if_cancelled()
+            est = clone(pipe_fit)
+            X_tr = X.iloc[tr_idx] if hasattr(X, "iloc") else X[tr_idx]
+            y_tr = y.iloc[tr_idx] if hasattr(y, "iloc") else y[tr_idx]
+            X_te = X.iloc[te_idx] if hasattr(X, "iloc") else X[te_idx]
+            est.fit(X_tr, y_tr)
+            pred = np.asarray(est.predict(X_te), dtype=float).reshape(-1)
+            pred_sum[np.asarray(te_idx, dtype=int)] += pred
+            pred_count[np.asarray(te_idx, dtype=int)] += 1
+
+        denom = np.maximum(pred_count, 1)
+        y_pred = pred_sum / denom
+        return X, y, y_pred, cv_obj
 
     total_plots = 0
     for model_name in selected_models:
@@ -506,6 +614,39 @@ def run_training(
             pipe = fitted_models[model_name]["pipe"]
             fe_prefix = "feature_engineering_" if fe_enabled else ""
 
+            # Build evaluation-consistent predictions once and reuse across diagnostic plots.
+            needs_eval_preds = any(
+                p in selected_plots for p in ("Residuals", "Residual Distribution", "Q-Q Plot", "Predictions vs Actual")
+            )
+            eval_X, eval_y, eval_pred = X, y, None
+            if needs_eval_preds:
+                try:
+                    if str(cv_mode or "").strip().lower() == "nested":
+                        nested_oof = fitted_models.get(model_name, {}).get("oof_pred")
+                        if nested_oof is not None:
+                            eval_X, eval_y, eval_pred = X, y, nested_oof
+                        else:
+                            eval_X, eval_y, eval_pred, _cv_for_lc_unused = _compute_eval_predictions(
+                                pipe,
+                                mode=cv_mode,
+                                folds=cv_folds,
+                            )
+                    else:
+                        eval_X, eval_y, eval_pred, _cv_for_lc_unused = _compute_eval_predictions(
+                            pipe,
+                            mode=cv_mode,
+                            folds=cv_folds,
+                        )
+                except Exception as exc:
+                    _safe_call(callbacks.log, f"[Warning] Could not compute evaluation predictions: {exc}", context="log")
+                    eval_X, eval_y, eval_pred = X, y, None
+
+            try:
+                lc_mode = "kfold" if str(cv_mode).strip().lower() == "holdout" else cv_mode
+                cv_for_lc = _build_cv_splits(lc_mode, folds=int(cv_folds or 5))
+            except Exception:
+                cv_for_lc = 5
+
             model_outdir: str | None = None
 
             def _outdir() -> str:
@@ -517,17 +658,24 @@ def run_training(
 
             if "Residuals" in selected_plots:
                 raise_if_cancelled()
-                plot_residuals(fe_prefix + model_name, pipe, X, y, _outdir())
+                plot_residuals(fe_prefix + model_name, pipe, eval_X, eval_y, _outdir(), preds=eval_pred)
                 plot_progress_inc()
 
             if "Residual Distribution" in selected_plots:
                 raise_if_cancelled()
-                plot_residual_distribution(fe_prefix + model_name, pipe, X, y, _outdir())
+                plot_residual_distribution(
+                    fe_prefix + model_name,
+                    pipe,
+                    eval_X,
+                    eval_y,
+                    _outdir(),
+                    preds=eval_pred,
+                )
                 plot_progress_inc()
 
             if "Q-Q Plot" in selected_plots:
                 raise_if_cancelled()
-                plot_qq(fe_prefix + model_name, pipe, X, y, _outdir())
+                plot_qq(fe_prefix + model_name, pipe, eval_X, eval_y, _outdir(), preds=eval_pred)
                 plot_progress_inc()
 
             if "Correlation Matrix" in selected_plots:
@@ -537,12 +685,19 @@ def run_training(
 
             if "Learning Curve" in selected_plots:
                 raise_if_cancelled()
-                plot_learning_curve(fe_prefix + model_name, pipe, X, y, _outdir())
+                plot_learning_curve(fe_prefix + model_name, pipe, X, y, _outdir(), cv=cv_for_lc)
                 plot_progress_inc()
 
             if "Predictions vs Actual" in selected_plots:
                 raise_if_cancelled()
-                plot_predictions_vs_actual(fe_prefix + model_name, pipe, X, y, _outdir())
+                plot_predictions_vs_actual(
+                    fe_prefix + model_name,
+                    pipe,
+                    eval_X,
+                    eval_y,
+                    _outdir(),
+                    preds=eval_pred,
+                )
                 plot_progress_inc()
 
             if ("Feature Importance" in selected_plots) or ("Feature Importance Heatmap" in selected_plots):
@@ -571,6 +726,7 @@ def run_training(
                             _outdir(),
                             top_n=tn,
                             var_thresh=vt,
+                            dependence_mode=shap_dependence_mode,
                             cancel_cb=callbacks.should_cancel,
                         )
                         plot_progress_inc()
@@ -598,6 +754,7 @@ def run_training(
                             var_thresh=vt,
                             always_include=shap_always_include,
                             feature_value_labels=feature_value_labels_for_outputs,
+                            dependence_mode=shap_dependence_mode,
                             cancel_cb=callbacks.should_cancel,
                         )
                         for _ in range(int(eff_k)):
