@@ -162,7 +162,7 @@ def generate_pdp(best_model_name: str, best_pipe, X, top_features: list, outdir:
             plt.savefig(
                 os.path.join(out_expl, f"{best_model_name}_PDP_{safe}.png"),
                 bbox_inches="tight",
-                dpi=160,
+                dpi=300,
             )
             plt.close()
     except Exception as e:

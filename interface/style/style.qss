@@ -247,8 +247,9 @@ QScrollBar::sub-page:horizontal {
   background: transparent;
 }
 
+
 QTabWidget::pane {
-  background: transparent;
+  background: #FFF;
   border: none;
   border-top: 1px solid #EBEBEE;
 }

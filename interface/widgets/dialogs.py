@@ -1218,17 +1218,21 @@ class PublicationExportDialog(QDialog):
         self.tabs.setDocumentMode(True)
         root.addWidget(self.tabs, 1)
 
+
         self.variables_tab = QWidget()
+        self.variables_tab.setStyleSheet("background: #FFF;")
         self.value_labels_tab = QWidget()
-        self.tabs.addTab(self.variables_tab, tr("dialogs.publication_helper.step_variables", default="1. Variables"))
-        self.tabs.addTab(self.value_labels_tab, tr("dialogs.publication_helper.step_value_labels", default="2. Value Labels"))
+        self.value_labels_tab.setStyleSheet("background: #FFF;")
+        self.tabs.addTab(self.variables_tab, tr("dialogs.publication_helper.step_variables", default="Variables"))
+        self.tabs.addTab(self.value_labels_tab, tr("dialogs.publication_helper.step_value_labels", default="Value Labels"))
 
         self._build_variables_tab()
         self._build_value_labels_tab()
 
         if not self._setup_mode:
             self.assets_tab = QWidget()
-            self.tabs.addTab(self.assets_tab, tr("dialogs.publication_helper.step_review", default="3. Package Review"))
+            self.assets_tab.setStyleSheet("background: #FFF;")
+            self.tabs.addTab(self.assets_tab, tr("dialogs.publication_helper.step_review", default="Review & Export"))
             self._build_assets_tab(default_output_dir)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
