@@ -3,7 +3,20 @@ import sys
 import time
 import json
 import re
-from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QDialog, QListWidgetItem, QTableWidgetItem
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QFileDialog,
+    QMessageBox,
+    QDialog,
+    QListWidgetItem,
+    QTableWidgetItem,
+    QWidget,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QStyle,
+)
 from PyQt6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction, QActionGroup
 from PyQt6.QtCore import Qt, QUrl, QSettings, QCoreApplication
 from PyQt6.QtGui import QDesktopServices
@@ -571,8 +584,6 @@ class MLTrainerApp(QMainWindow):
             self.header.toggleModelsButton.clicked.connect(lambda _checked=False: self._open_models_panel())
         if hasattr(self.header, "toggleResultsButton"):
             self.header.toggleResultsButton.clicked.connect(self._toggle_results_panel)
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.clicked.connect(lambda _checked=False: self._open_models_panel())
         # Feature engineering is toggled in UI and applied during training.
         c.fe_checkbox.toggled.connect(self._on_toggle_feature_engineering)
         # Preview button
@@ -616,7 +627,22 @@ class MLTrainerApp(QMainWindow):
         if hasattr(c, "results_dialog"):
             c.results_dialog.finished.connect(self._on_results_dialog_finished)
 
+        # Keep stepper completion icons in sync with the active step.
+        if hasattr(c, "step_tabs"):
+            try:
+                c.step_tabs.currentChanged.connect(self._on_step_tab_changed)
+            except Exception:
+                pass
+
         self._init_shortcuts()
+
+    def _on_step_tab_changed(self, _index: int):
+        # Re-apply completion icons so future steps never show as completed.
+        self._sync_step_tab_titles(
+            has_data=bool(getattr(self, "_guided_has_data", False)),
+            has_variables=bool(getattr(self, "_guided_has_variables", False)),
+            has_models=bool(getattr(self, "_guided_has_models", False)),
+        )
 
     def _init_shortcuts(self):
         self._shortcut_load = QShortcut(QKeySequence("Ctrl+O"), self)
@@ -970,8 +996,8 @@ class MLTrainerApp(QMainWindow):
             {
                 "group": grp_view,
                 "title": tr("command_palette.view.open_model_selection", default="Open Model Selection"),
-                "description": tr("command_palette.view.open_model_selection_desc", default="Open the model selection popup."),
-                "keywords": "model selection popup",
+                "description": tr("command_palette.view.open_model_selection_desc", default="Go to Step 3: Models."),
+                "keywords": "model selection models step 3",
                 "enabled": True,
                 "callback": self._open_models_panel,
             },
@@ -1515,6 +1541,12 @@ class MLTrainerApp(QMainWindow):
         has_variables = self.state.target is not None and bool(self.state.features)
         has_models = any(chk.isChecked() for chk in c.model_checks.values())
 
+        if hasattr(c, "skeleton_panel"):
+            try:
+                c.skeleton_panel.setVisible(not running)
+            except Exception:
+                pass
+
         if running:
             c.load_button.setEnabled(False)
             c.vars_button.setEnabled(False)
@@ -1530,8 +1562,8 @@ class MLTrainerApp(QMainWindow):
             c.cv_mode_combo.setEnabled(True)
             c.cv_spin.setEnabled((c.cv_mode_combo.currentData() or "repeated") != "holdout")
             c.train_button.setEnabled(has_variables and has_models)
-            if hasattr(c, "open_models_panel_btn"):
-                c.open_models_panel_btn.setEnabled(has_variables)
+            if hasattr(c, "model_picker"):
+                c.model_picker.setEnabled(has_variables)
             c.info_button.setEnabled(True)
             c.customize_plots_btn.setEnabled(True)
             c.shap_settings_btn.setEnabled(True)
@@ -1545,8 +1577,8 @@ class MLTrainerApp(QMainWindow):
             c.fe_checkbox.setEnabled(has_data)
             c.preview_button.setEnabled(has_data)
             c.train_button.setEnabled(has_variables and has_models)
-            if hasattr(c, "open_models_panel_btn"):
-                c.open_models_panel_btn.setEnabled(has_variables)
+            if hasattr(c, "model_picker"):
+                c.model_picker.setEnabled(has_variables)
             c.info_button.setEnabled(True)
             c.customize_plots_btn.setEnabled(True)
             c.shap_settings_btn.setEnabled(True)
@@ -1899,7 +1931,13 @@ class MLTrainerApp(QMainWindow):
         effective_state.set_dataframe(effective_df)
         effective_state.set_features(mapped_target, mapped_features)
         effective_state.fe_enabled = bool(self.state.fe_enabled)
-        effective_state.model_checks = dict(self.state.model_checks)
+        try:
+            effective_state.model_checks = {
+                str(name): bool(chk.isChecked())
+                for name, chk in getattr(self.controls, "model_checks", {}).items()
+            }
+        except Exception:
+            effective_state.model_checks = dict(self.state.model_checks)
         effective_state.studio_profile = self._studio_profile_data(profile)
         return effective_state, {
             "rename_map": applied_map,
@@ -1924,12 +1962,20 @@ class MLTrainerApp(QMainWindow):
             c.fe_checkbox.setChecked(False)
             c.fe_checkbox.blockSignals(False)
             c.fe_checkbox.setEnabled(False)
-            c.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
+            c.selection_label.setText(
+                tr(
+                    "status.variables_none_no_data",
+                    default="Load a dataset to select variables",
+                )
+            )
+            self._set_step2_selection_badge_state("blocked")
             c.selection_label.setToolTip("")
             c.kpi_target_value.setText(tr("status.kpi.not_selected", default="Not selected"))
             c.train_button.setEnabled(False)
-            if hasattr(c, "open_models_panel_btn"):
-                c.open_models_panel_btn.setEnabled(False)
+            if hasattr(c, "model_picker"):
+                c.model_picker.setEnabled(False)
+            if hasattr(c, "studio_btn"):
+                c.studio_btn.setToolTip(tr("controls.studio.disabled_no_data", default="Load a dataset first."))
             self._set_guided_step_state(has_data=False, has_variables=False, has_models=False)
             return
 
@@ -1940,12 +1986,19 @@ class MLTrainerApp(QMainWindow):
         if self.state.target is None or not self.state.features:
             if hasattr(c, "studio_btn"):
                 c.studio_btn.setEnabled(False)
-            c.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
+                c.studio_btn.setToolTip(tr("controls.studio.disabled_no_vars", default="Select target and features to unlock Publication Studio."))
+            c.selection_label.setText(
+                tr(
+                    "status.variables_pending",
+                    default="0 Features Selected (Target pending)",
+                )
+            )
+            self._set_step2_selection_badge_state("pending")
             c.selection_label.setToolTip("")
             c.kpi_target_value.setText(tr("status.kpi.not_selected", default="Not selected"))
             c.train_button.setEnabled(False)
-            if hasattr(c, "open_models_panel_btn"):
-                c.open_models_panel_btn.setEnabled(False)
+            if hasattr(c, "model_picker"):
+                c.model_picker.setEnabled(False)
             self._set_guided_step_state(has_data=True, has_variables=False, has_models=False)
             return
 
@@ -1972,12 +2025,25 @@ class MLTrainerApp(QMainWindow):
             + (", ".join(feat_names) if feat_names else tr("common.none", default="none"))
         )
         c.kpi_target_value.setText(target_disp)
+        self._set_step2_selection_badge_state("ready")
         c.train_button.setEnabled(has_models)
         if hasattr(c, "studio_btn"):
             c.studio_btn.setEnabled(True)
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.setEnabled(True)
+            c.studio_btn.setToolTip(tr("controls.studio.tooltip", default="Configure publication-ready names for outputs."))
+        if hasattr(c, "model_picker"):
+            c.model_picker.setEnabled(True)
         self._set_guided_step_state(has_data=True, has_variables=True, has_models=has_models)
+
+    def _set_step2_selection_badge_state(self, state: str):
+        c = self.controls
+        if not hasattr(c, "selection_label"):
+            return
+        try:
+            c.selection_label.setProperty("state", str(state))
+            c.selection_label.style().unpolish(c.selection_label)
+            c.selection_label.style().polish(c.selection_label)
+        except Exception:
+            pass
 
     def _apply_snapshot(self, snapshot: dict):
         prev_guard = self._snapshot_guard
@@ -2257,8 +2323,8 @@ class MLTrainerApp(QMainWindow):
         c.vars_button.setEnabled(True)
         c.train_button.setEnabled(False)
         c.fe_checkbox.setEnabled(True)
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.setEnabled(False)
+        if hasattr(c, "model_picker"):
+            c.model_picker.setEnabled(False)
 
         abs_path = os.path.abspath(path)
         self._current_dataset_path = abs_path
@@ -2919,11 +2985,69 @@ class MLTrainerApp(QMainWindow):
         c = self.controls
         if not hasattr(c, "step_tabs"):
             return
+
+        # Cache the latest step-state booleans for UI re-sync (e.g., on tab changes).
+        self._guided_has_data = bool(has_data)
+        self._guided_has_variables = bool(has_variables)
+        self._guided_has_models = bool(has_models)
+
         c.step_tabs.setTabEnabled(0, True)
         c.step_tabs.setTabEnabled(1, bool(has_data))
-        c.step_tabs.setTabEnabled(2, bool(has_variables) and bool(has_models))
+        c.step_tabs.setTabEnabled(2, bool(has_variables))
         if c.step_tabs.count() > 3:
             c.step_tabs.setTabEnabled(3, bool(has_variables) and bool(has_models))
+
+        # Keep Step 4 warnings polite and local (near the disabled action).
+        if hasattr(c, "status_label") and (not getattr(c, "cancel_button", None) or not c.cancel_button.isVisible()):
+            try:
+                if not has_data:
+                    c.status_label.setProperty("severity", "warn")
+                    c.status_label.setText(
+                        tr(
+                            "status.train_requires_dataset",
+                            default="⚠️ Please complete Step 1 (Dataset) before training.",
+                        )
+                    )
+                else:
+                    c.status_label.setProperty("severity", "neutral")
+            except Exception:
+                pass
+        self._sync_step_tab_titles(has_data=has_data, has_variables=has_variables, has_models=has_models)
+
+    def _sync_step_tab_titles(self, *, has_data: bool, has_variables: bool, has_models: bool):
+        c = self.controls
+        if not hasattr(c, "step_tabs"):
+            return
+
+        c.step_tabs.setTabText(0, tr("controls.tabs.step1", default="1. Dataset"))
+        c.step_tabs.setTabText(1, tr("controls.tabs.step2", default="2. Variables"))
+        c.step_tabs.setTabText(2, tr("controls.tabs.step3", default="3. Models"))
+        if c.step_tabs.count() > 3:
+            c.step_tabs.setTabText(3, tr("controls.tabs.step4", default="4. Train"))
+
+        try:
+            ok_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
+        except Exception:
+            ok_icon = QIcon()
+
+        # Completion should never be shown for steps ahead of the current step.
+        try:
+            current_idx = int(c.step_tabs.currentIndex())
+        except Exception:
+            current_idx = 0
+
+        step1_done = bool(has_data)
+        step2_done = bool(has_data) and bool(has_variables)
+        step3_done = bool(has_data) and bool(has_variables) and bool(has_models)
+
+        try:
+            c.step_tabs.setTabIcon(0, ok_icon if (current_idx >= 0 and step1_done) else QIcon())
+            c.step_tabs.setTabIcon(1, ok_icon if (current_idx >= 1 and step2_done) else QIcon())
+            c.step_tabs.setTabIcon(2, ok_icon if (current_idx >= 2 and step3_done) else QIcon())
+            if c.step_tabs.count() > 3:
+                c.step_tabs.setTabIcon(3, QIcon())
+        except Exception:
+            pass
 
     def _go_to_step(self, index: int):
         c = self.controls
@@ -2936,8 +3060,8 @@ class MLTrainerApp(QMainWindow):
             pass
 
     def _open_models_panel(self):
-        if self._open_model_selection_dialog(prompt_for_training=False):
-            self.statusBar().showMessage(tr("status.model_selection_updated", default="Model selection updated"))
+        self._go_to_step(2)
+        self.statusBar().showMessage(tr("status.models_opened", default="Models"))
 
     def _restore_window_state(self):
         settings = QSettings()
@@ -2949,7 +3073,7 @@ class MLTrainerApp(QMainWindow):
             LOGGER.warning("Invalid ui/layoutVersion value '%s'; falling back to default layout.", raw_layout_version)
 
         if layout_version == UI_LAYOUT_VERSION:
-            # Model selection moved to popup UX; keep side model panel hidden.
+            # Model selection is inline (Step 3); keep side model panel hidden.
             self._left_panel_visible = False
             self._right_panel_visible = str(settings.value("ui/rightPanelVisible", "false")).lower() in ("true", "1", "yes")
         else:
@@ -3025,7 +3149,7 @@ class MLTrainerApp(QMainWindow):
         self._capture_snapshot(clear_redo=True)
 
     def _toggle_models_panel(self, checked: bool):
-        # Legacy hook kept for compatibility; model selection is now popup-based.
+        # Legacy hook kept for compatibility; model selection is now inline on Step 3.
         _ = checked
         self._left_panel_visible = False
         self._open_models_panel()
@@ -3055,21 +3179,55 @@ class MLTrainerApp(QMainWindow):
         has_variables = self.state.target is not None and bool(self.state.features)
         has_models = bool(selected)
 
-        if selected:
-            c.model_summary_label.setText(
-                tr(
-                    "status.selected_models_summary",
-                    default="Selected models: {selected}/{total} ({preview})",
-                    selected=len(selected),
-                    total=total,
-                    preview=", ".join(selected[:3]) + ("..." if len(selected) > 3 else ""),
-                )
+        c.model_summary_label.setText(
+            tr(
+                "status.training_queue_header",
+                default="Training Queue ({selected}/{total})",
+                selected=len(selected),
+                total=total,
             )
-        else:
-            c.model_summary_label.setText(tr("status.no_model_selected", default="No model selected yet."))
+        )
 
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.setEnabled(has_variables)
+        if hasattr(c, "model_picker"):
+            c.model_picker.setEnabled(has_variables)
+
+        if hasattr(c, "model_selected_list"):
+            try:
+                lst = c.model_selected_list
+                lst.clear()
+
+                for name in sorted(selected):
+                    item = QListWidgetItem("")
+                    row = QWidget()
+                    row_layout = QHBoxLayout(row)
+                    row_layout.setContentsMargins(6, 2, 6, 2)
+                    row_layout.setSpacing(6)
+
+                    label = QLabel(str(name))
+                    label.setToolTip(str(name))
+
+                    btn = QPushButton("×")
+                    btn.setObjectName("removeChip")
+                    btn.setToolTip(tr("controls.models.remove", default="Remove"))
+                    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    try:
+                        btn.setMinimumSize(24, 24)
+                    except Exception:
+                        pass
+                    try:
+                        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+                    except Exception:
+                        pass
+                    btn.clicked.connect(lambda _checked=False, n=name: c.model_checks.get(n).setChecked(False) if c.model_checks.get(n) else None)
+
+                    row_layout.addWidget(label, 1)
+                    row_layout.addWidget(btn, 0)
+
+                    item.setSizeHint(row.sizeHint())
+                    lst.addItem(item)
+                    lst.setItemWidget(item, row)
+            except Exception:
+                pass
 
         c.train_button.setEnabled(has_variables and has_models)
 
@@ -3123,8 +3281,12 @@ class MLTrainerApp(QMainWindow):
         selected_models = [name for name, chk in c.model_checks.items() if chk.isChecked()]
         if not selected_models:
             c.runtime_hint_label.setText(
-                tr("status.runtime_select_model", default="Estimated runtime: select at least one model")
+                tr("status.runtime_select_model", default="Estimated time: select at least one model")
             )
+            try:
+                c.runtime_hint_label.setToolTip("")
+            except Exception:
+                pass
             return
 
         mode = c.cv_mode_combo.currentData() or 'repeated'
@@ -3152,26 +3314,30 @@ class MLTrainerApp(QMainWindow):
         mins, secs = divmod(max(est_seconds, 1), 60)
         if mins > 0:
             txt = tr(
-                "status.runtime_estimate_min",
-                default="Estimated runtime: ~{mins}m {secs}s for {models} model(s)",
+                "status.runtime_estimate_min_short",
+                default="Estimated time: ~{mins}m {secs}s",
                 mins=mins,
                 secs=secs,
-                models=len(selected_models),
             )
         else:
             txt = tr(
-                "status.runtime_estimate_sec",
-                default="Estimated runtime: ~{secs}s for {models} model(s)",
+                "status.runtime_estimate_sec_short",
+                default="Estimated time: ~{secs}s",
                 secs=secs,
-                models=len(selected_models),
-            )
-        if selected_scripts:
-            txt += tr(
-                "status.runtime_extra_tasks",
-                default=" + {count} extra analysis task(s)",
-                count=len(selected_scripts),
             )
         c.runtime_hint_label.setText(txt)
+
+        try:
+            detail = tr(
+                "status.runtime_estimate_tooltip",
+                default="Models: {models}\nValidation: {mode}\nExtra analysis tasks: {extra}",
+                models=len(selected_models),
+                mode=str(c.cv_mode_combo.currentText() or ""),
+                extra=len(selected_scripts),
+            )
+            c.runtime_hint_label.setToolTip(detail)
+        except Exception:
+            pass
 
     def _refresh_plot_check_states_from_settings(self):
         """Sync the sidebar plot checkboxes with persisted QSettings, in case they were changed in the dialog."""
@@ -3412,12 +3578,13 @@ class MLTrainerApp(QMainWindow):
                 + (", ".join(feat_names) if feat_names else tr("common.none", default="none"))
             )
             self.controls.kpi_target_value.setText(target_disp)
+            self._set_step2_selection_badge_state("ready")
             has_models = any(chk.isChecked() for chk in self.controls.model_checks.values())
             has_variables = bool(t and feats)
             
             self.controls.train_button.setEnabled(has_models and has_variables)
-            if hasattr(self.controls, "open_models_panel_btn"):
-                self.controls.open_models_panel_btn.setEnabled(has_variables)
+            if hasattr(self.controls, "model_picker"):
+                self.controls.model_picker.setEnabled(has_variables)
             if hasattr(self.controls, "studio_btn"):
                 self.controls.studio_btn.setEnabled(has_variables)
             self.controls.status_label.setText(
@@ -3916,8 +4083,8 @@ class MLTrainerApp(QMainWindow):
         c.fe_checkbox.setChecked(False)
         c.fe_checkbox.setEnabled(False)
         c.preview_button.setEnabled(False)
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.setEnabled(False)
+        if hasattr(c, "model_picker"):
+            c.model_picker.setEnabled(False)
         c.cancel_button.setEnabled(False)
         c.cancel_button.setVisible(False)
         c.progress_panel.setVisible(False)

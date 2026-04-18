@@ -50,8 +50,11 @@ def _coerce_numeric_like_object_columns(df: pd.DataFrame, threshold: float = 0.9
         
         ratio = numeric.notna().mean()
         if ratio >= threshold:
-            # Map back to original dataframe size
-            df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", ".", regex=False), errors="coerce")
+            # Replaced properly: Assign the numeric conversion back to the column
+            df[col] = pd.to_numeric(
+                df[col].astype(str).str.replace(",", ".", regex=False),
+                errors="coerce"
+            )
 
     # Shift ALL remaining completely text-based categorical object columns to the PyArrow C++ Backend (if available)
     try:

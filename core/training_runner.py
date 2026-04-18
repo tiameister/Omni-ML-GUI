@@ -155,7 +155,7 @@ def run_training(
         plot_residual_distribution,
         plot_residuals,
     )
-    from evaluation.metrics import get_feature_names_from_pipe, save_model_metrics
+    from evaluation.metrics import get_feature_names_from_pipe, save_model_metrics, save_cv_splits
     from features.feature_engineering import apply_feature_engineering
     from features.preprocess import build_preprocessor
     from models.train import train_and_evaluate
@@ -165,8 +165,14 @@ def run_training(
     if df is None or target is None or features is None:
         raise RuntimeError("df, target, and features are required before training.")
 
+
+    if target in features:
+        features = [f for f in features if f != target]
+        _safe_call(callbacks.log, f"WARNING: Target '{target}' was included in feature list! Automatically removed to prevent catastrophic data leakage.", context="log")
+
     X = df[features].copy()
     y = df[target].copy()
+
 
     # Normalize feature_value_labels so downstream SHAP export is stable.
     feature_value_labels_for_outputs: dict[str, dict[str, str]] = {}
@@ -201,32 +207,27 @@ def run_training(
     feature_count_after_fe = feature_count_before_fe
 
     if bool(fe_enabled):
-        raise_if_cancelled()
-        _safe_call(
-            callbacks.log,
-            f"Feature engineering started for training matrix ({feature_count_before_fe} base features).",
-            context="log",
-        )
-
-        X_engineered, _new_num_cols, _cat_cols = apply_feature_engineering(
-            X,
-            output_folder="feature_engineered_dataset",
-            save_csv=False,
-            force_passthrough_cols=list(feature_value_labels_for_outputs.keys()),
-        )
-        X = X_engineered
-        feature_count_after_fe = int(X.shape[1])
-        _safe_call(
-            callbacks.log,
-            f"Feature engineering completed: {feature_count_before_fe} -> {feature_count_after_fe} features.",
-            context="log",
-        )
+        _safe_call(callbacks.log, "Feature engineering is enabled and will execute inside CV loop safely.", context="log")
         raise_if_cancelled()
 
     # Build preprocessing pipeline based on effective matrix.
     num_cols = X.select_dtypes(include=["number"]).columns.tolist()
-    cat_cols = [c for c in X.columns if c not in set(num_cols)]
-    preproc = build_preprocessor(num_cols=num_cols, cat_cols=cat_cols)
+    
+    # Strictly define categoricals and block dimensionality explosion from misclassified numeric identifiers
+    cat_cols_raw = [c for c in X.columns if c not in set(num_cols)]
+    cat_cols = []
+    
+    for c in cat_cols_raw:
+        unique_count = X[c].nunique()
+        # High cardinality safe-guard mask: If an object column has more than 50 unique categories and 
+        # its uniqueness ratio is high (e.g. text logs or UUIDs instead of groups), drop it from modelling.
+        if unique_count > 50 and (unique_count / max(len(X), 1)) > 0.15:
+            _safe_call(callbacks.log, f"WARNING: Dropped high-cardinality categorical '{c}' ({unique_count} distinct values) to prevent dimensionality explosion.", context="log")
+            X = X.drop(columns=[c])
+        else:
+            cat_cols.append(c)
+
+    preproc = build_preprocessor(num_cols=num_cols, cat_cols=cat_cols, fe_enabled=bool(fe_enabled))
 
     def progress_callback(done: int, total: int):
         _safe_call(callbacks.progress, done, total, context="progress")
@@ -292,6 +293,7 @@ def run_training(
     if metrics_df is not None and not metrics_df.empty:
         fe_prefix = "feature_engineering_" if fe_enabled else ""
         save_model_metrics(run_outdir, metrics_df, filename_prefix=fe_prefix)
+        save_cv_splits(run_outdir, {name: m.get("cv_scores", {}) for name, m in fitted_models.items()})
 
     # Provenance
     selection_dir = str(get_run_subdir(run_root, "0_Feature_Selection"))

@@ -71,7 +71,10 @@ class StartupDialog(QDialog):
         # Title / Name / Institution
         self.title_label = QLabel(self)
         self.title_label.setObjectName("startupTitle")
-        self.title_label.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        title_font = QFont()
+        title_font.setPointSize(18)
+        title_font.setWeight(QFont.Weight.Bold)
+        self.title_label.setFont(title_font)
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setWordWrap(True)
         layout.addWidget(self.title_label)
@@ -170,7 +173,9 @@ class StartupDialog(QDialog):
         except Exception:
             LOGGER.exception("Failed to read VERSION from config")
         self.version_label = QLabel(f"Version {version_text}", self)
-        self.version_label.setFont(QFont("Segoe UI", 8))
+        version_font = QFont()
+        version_font.setPointSize(8)
+        self.version_label.setFont(version_font)
         self.version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.version_label.setStyleSheet("color: gray;")
         layout.addWidget(self.version_label)

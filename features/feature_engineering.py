@@ -2,7 +2,10 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import PolynomialFeatures
+from sklearn.base import BaseEstimator, TransformerMixin
+import logging
 
+LOGGER = logging.getLogger(__name__)
 
 def _is_integer_like(series: pd.Series, tol: float = 1e-9) -> bool:
     vals = pd.to_numeric(series, errors="coerce").dropna().to_numpy(dtype=float)
@@ -10,18 +13,10 @@ def _is_integer_like(series: pd.Series, tol: float = 1e-9) -> bool:
         return False
     return bool(np.all(np.isclose(vals, np.round(vals), atol=tol)))
 
-
 def _split_numeric_feature_types(
     df: pd.DataFrame, numeric_cols: list[str], discrete_threshold: int
 ) -> tuple[list[str], list[str]]:
-    """Split numeric columns into continuous vs likely discrete coded features.
-
-    Discrete coded features (e.g., gender: 1/2, Likert 1..5) are kept as raw
-    columns to preserve interpretability and avoid synthetic polynomial terms.
-    """
-    continuous_cols: list[str] = []
-    discrete_cols: list[str] = []
-
+    continuous_cols, discrete_cols = [], []
     for col in numeric_cols:
         ser = pd.to_numeric(df[col], errors="coerce")
         non_null = ser.dropna()
@@ -29,104 +24,126 @@ def _split_numeric_feature_types(
         nunique = int(non_null.nunique())
         unique_ratio = float(nunique / max(n_non_null, 1))
 
-        likely_discrete = False
-        if _is_integer_like(ser):
-            likely_discrete = (nunique <= 2) or (
-                nunique <= max(2, int(discrete_threshold)) and unique_ratio <= 0.20
-            )
-
-        if likely_discrete:
+        if _is_integer_like(ser) and ((nunique <= 2) or (nunique <= max(2, int(discrete_threshold)) and unique_ratio <= 0.20)):
             discrete_cols.append(col)
         else:
             continuous_cols.append(col)
-
     return continuous_cols, discrete_cols
 
-
-def apply_feature_engineering(
-    df: pd.DataFrame,
-    output_folder: str = "feature_engineered_dataset",
-    degree: int = 2,
-    interaction_only: bool = False,
-    save_csv: bool = True,
-    discrete_threshold: int = 12,
-    force_passthrough_cols: list[str] | None = None,
-):
-    """Applies basic feature engineering.
-
-    - PolynomialFeatures on numeric columns (continuous only)
-    - Missing indicator flags for continuous columns
-
-    Saves the engineered DataFrame to output_folder/feature_engineered.csv when save_csv=True.
-
-    Returns (df_engineered, new_feature_cols, categorical_cols)
+class FeatureEngineeringTransformer(BaseEstimator, TransformerMixin):
     """
-    if save_csv:
-        os.makedirs(output_folder, exist_ok=True)
-    df = df.copy()
+    Scikit-Learn compatible transformer that applies polynomial feature expansion.
+    Safely calculates variances and missing indicators inside the cross-validation
+    loop to completely prevent Data Leakage.
+    """
+    def __init__(self, degree=2, interaction_only=False, max_poly_feats=100, discrete_threshold=12, fe_enabled=True):
+        self.degree = degree
+        self.interaction_only = interaction_only
+        self.max_poly_feats = max_poly_feats
+        self.discrete_threshold = discrete_threshold
+        self.fe_enabled = fe_enabled
 
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    continuous_numeric_cols, discrete_numeric_cols = _split_numeric_feature_types(
-        df,
-        numeric_cols,
-        discrete_threshold=max(2, int(discrete_threshold)),
-    )
+    def fit(self, X, y=None):
+        if not self.fe_enabled:
+            return self
 
-    passthrough_force = {str(c).strip() for c in (force_passthrough_cols or []) if str(c).strip()}
-    if passthrough_force:
-        keep_cont: list[str] = []
-        for col in continuous_numeric_cols:
-            if col in passthrough_force:
-                if col not in discrete_numeric_cols:
-                    discrete_numeric_cols.append(col)
-            else:
-                keep_cont.append(col)
-        continuous_numeric_cols = keep_cont
+        df = X if isinstance(X, pd.DataFrame) else pd.DataFrame(X)
+        numeric_cols = df.columns.tolist()
 
-    missing_indicator_cols: list[str] = []
-    for col in continuous_numeric_cols:
-        miss_col = f"{col}_missing"
-        df[miss_col] = df[col].isna().astype(int)
-        missing_indicator_cols.append(miss_col)
-
-    poly_names: list[str] = []
-    if continuous_numeric_cols:
-        # Cap features fed into polynomial to prevent MemoryError (O(N^d))
-        max_poly_feats = 100
-        if len(continuous_numeric_cols) > max_poly_feats:
-            import logging
-            logging.getLogger(__name__).warning("Too many continuous features. Capping polynomial transformer to top %d by variance.", max_poly_feats)
-            # Take highest variance features
-            vars_s = df[continuous_numeric_cols].var().sort_values(ascending=False)
-            top_cols = vars_s.head(max_poly_feats).index.tolist()
-            # Keep the rest as passthrough
-            passthrough_cont = [c for c in continuous_numeric_cols if c not in top_cols]
-            continuous_numeric_cols = top_cols
-            discrete_numeric_cols.extend(passthrough_cont) # Add back as passthrough
-
-        df_num = df[continuous_numeric_cols].fillna(0)
-        pf = PolynomialFeatures(degree=degree, interaction_only=interaction_only, include_bias=False)
-        poly_arr = pf.fit_transform(df_num)
-        poly_names = list(pf.get_feature_names_out(continuous_numeric_cols))
+        cont_cols, disc_cols = _split_numeric_feature_types(df, numeric_cols, self.discrete_threshold)
         
-        # Cast to float32 to save RAM immediately after creation
-        poly_arr = poly_arr.astype(np.float32)
-        try:
+        self.discrete_cols_ = disc_cols
+        self.poly_cols_ = []
+        
+        if cont_cols:
+            if len(cont_cols) > self.max_poly_feats:
+                LOGGER.warning("Capping polynomial transformer to top %d continuous features.", self.max_poly_feats)
+                # Compute variance inside CV fold safely
+                vars_s = df[cont_cols].var().fillna(0).sort_values(ascending=False)
+                self.poly_cols_ = vars_s.head(self.max_poly_feats).index.tolist()
+                self.discrete_cols_.extend([c for c in cont_cols if c not in self.poly_cols_])
+            else:
+                self.poly_cols_ = cont_cols
+                
+            self.pf_ = PolynomialFeatures(degree=self.degree, interaction_only=self.interaction_only, include_bias=False)
+            self.pf_.fit(df[self.poly_cols_].fillna(0))
+            
+        self.missing_cols_ = []
+        for col in self.poly_cols_ + self.discrete_cols_:
+            if col in df.columns and df[col].isna().any():
+                self.missing_cols_.append(col)
+        
+        return self
+
+    def transform(self, X):
+        if not self.fe_enabled:
+            return X
+            
+        df = X if isinstance(X, pd.DataFrame) else pd.DataFrame(X)
+        
+        pieces = []
+        # Missing Indicators for continuous cols (fitted only)
+        miss_df = pd.DataFrame(index=df.index)
+        for col in getattr(self, "missing_cols_", []):
+            if col in df.columns:
+                miss_df[f"{col}_missing"] = df[col].isna().astype(np.float32)
+            else:
+                miss_df[f"{col}_missing"] = 0.0
+        if not miss_df.empty:
+            pieces.append(miss_df)
+
+        # Polynomial Expansion
+        if getattr(self, "poly_cols_", []):
+            df_poly_input = df[self.poly_cols_] if all(c in df.columns for c in self.poly_cols_) else df.reindex(columns=self.poly_cols_).fillna(0)
+            poly_arr = self.pf_.transform(df_poly_input.fillna(0)).astype(np.float32)
+            poly_names = list(self.pf_.get_feature_names_out(self.poly_cols_))
             df_poly = pd.DataFrame(poly_arr, columns=poly_names, index=df.index)
-        except ValueError:
-            df_poly = pd.DataFrame(poly_arr, index=df.index)
-            df_poly.columns = [f"poly_{i}" for i in range(df_poly.shape[1])]
-            poly_names = list(df_poly.columns)
-    else:
-        df_poly = pd.DataFrame(index=df.index)
+            pieces.append(df_poly)
 
-    passthrough_cols = [c for c in df.columns if c not in set(continuous_numeric_cols)]
-    df_engineered = pd.concat([df_poly, df[passthrough_cols]], axis=1)
+        # Discrete / Passthrough
+        if getattr(self, "discrete_cols_", []):
+            disc_input = df[self.discrete_cols_] if all(c in df.columns for c in self.discrete_cols_) else df.reindex(columns=self.discrete_cols_)
+            pieces.append(disc_input.astype(np.float32))
+        
+        # Ensure we capture any remaining columns (e.g. ones that arrived unexpectedly)
+        used_cols = set(getattr(self, "poly_cols_", []) + getattr(self, "discrete_cols_", []))
+        remaining = [c for c in df.columns if c not in used_cols]
+        if remaining:
+            pieces.append(df[remaining].astype(np.float32))
+            
+        if not pieces:
+            return pd.DataFrame(index=df.index)
+            
+        res = pd.concat(pieces, axis=1)
+        return res
+        
+    def get_feature_names_out(self, input_features=None):
+        if not self.fe_enabled:
+            return np.array(input_features) if input_features is not None else np.array([])
+            
+        names = []
+        # Missing flags
+        if hasattr(self, "missing_cols_"):
+            for col in self.missing_cols_:
+                names.append(f"{col}_missing")
+                
+        # Polynomial features
+        if hasattr(self, "poly_cols_") and self.poly_cols_:
+            names.extend(self.pf_.get_feature_names_out(self.poly_cols_))
+            
+        # Discrete / Passthrough
+        if hasattr(self, "discrete_cols_"):
+            names.extend(self.discrete_cols_)
+            
+        # If input_features provided, check for any we missed (e.g. from upstream)
+        if input_features is not None:
+            used = set(getattr(self, "poly_cols_", []) + getattr(self, "discrete_cols_", []))
+            for col in input_features:
+                if col not in used:
+                    names.append(col)
+                    
+        return np.array(names)
 
-    if save_csv:
-        fe_path = os.path.join(output_folder, "feature_engineered.csv")
-        df_engineered.to_csv(fe_path, index=False, encoding="utf-8-sig")
-
-    new_num_cols = list(poly_names) + list(missing_indicator_cols) + list(discrete_numeric_cols)
-    cat_cols = [c for c in df_engineered.columns if c not in set(new_num_cols)]
-    return df_engineered, new_num_cols, cat_cols
+def apply_feature_engineering(*args, **kwargs):
+    """Legacy bypass, logic moved to Pipeline native FeatureEngineeringTransformer"""
+    return args[0], list(args[0].columns), []

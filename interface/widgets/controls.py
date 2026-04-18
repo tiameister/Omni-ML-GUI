@@ -4,11 +4,11 @@ from PyQt6.QtWidgets import (
     QTableView,
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QComboBox, QSpinBox, QCheckBox, QProgressBar, QTextEdit,
-    QTabWidget, QScrollArea, QTableWidget, QFrame, QGridLayout, QListWidget, QAbstractItemView, QSizePolicy
+    QTabWidget, QScrollArea, QTableWidget, QFrame, QGridLayout, QListWidget, QAbstractItemView, QSizePolicy, QAbstractSpinBox, QFormLayout
 )
 from interface.widgets.checkboxes import create_model_checkboxes, create_plot_checkboxes
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QFontDatabase
 from utils.localization import tr
 
 
@@ -104,10 +104,11 @@ def apply_translations(w):
     w.model_hint_label.setText(
         tr("controls.workflow.step3_hint", default="Select which machine learning models you want to include in the evaluation phase.")
     )
-    w.open_models_panel_btn.setText(tr("controls.buttons.choose_models", default="Choose Models..."))
-    w.open_models_panel_btn.setToolTip(
-        tr("controls.workflow.step3_button_tip", default="Open the model selection popup.")
-    )
+    if hasattr(w, "open_models_panel_btn"):
+        w.open_models_panel_btn.setText(tr("controls.buttons.choose_models", default="Choose Models..."))
+        w.open_models_panel_btn.setToolTip(
+            tr("controls.workflow.step3_button_tip", default="Open the model selection popup.")
+        )
 
     w.run_hint_label.setText(
         tr("controls.workflow.step4_hint", default="Initialize the training pipeline. Live monitoring and runtime context will stream below.")
@@ -146,11 +147,26 @@ def apply_translations(w):
             )
         )
     w.data_info_label.setText(tr("status.no_dataset_loaded", default="No dataset loaded yet."))
-    w.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
-    w.model_summary_label.setText(tr("status.no_model_selected", default="No model selected yet."))
+    w.selection_label.setText(tr("status.variables_pending", default="0 Features Selected (Target pending)"))
+    try:
+        w.model_summary_label.setText(
+            tr(
+                "status.training_queue_header",
+                default="Training Queue ({selected}/{total})",
+                selected=0,
+                total=len(getattr(w, "model_checks", {}) or {}),
+            )
+        )
+    except Exception:
+        w.model_summary_label.setText(tr("status.no_model_selected", default="No model selected yet."))
     w.progress_phase_label.setText(tr("status.idle", default="Idle"))
     w.progress_timing_label.setText(tr("status.elapsed_eta_default", default="Elapsed: -- | ETA: --"))
-    w.status_label.setText(tr("status.ready_begin", default="Ready. Load a dataset to begin."))
+    # Mid-page status line removed (footer already communicates state).
+    try:
+        w.status_label.setText("")
+        w.status_label.setVisible(False)
+    except Exception:
+        pass
     w.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
 
     if hasattr(w, "feedback_event_label"):
@@ -252,11 +268,18 @@ def apply_translations(w):
 
 
 def build_layout():
-    # Main container and horizontal layout
+    # Main container (row + footer)
     w = QWidget()
-    main_layout = QHBoxLayout(w)
+    outer_layout = QVBoxLayout(w)
+    # Full-bleed footer: remove global margins; individual panels own padding.
+    outer_layout.setContentsMargins(0, 0, 0, 0)
+    outer_layout.setSpacing(0)
+
+    content_row = QWidget()
+    main_layout = QHBoxLayout(content_row)
     main_layout.setContentsMargins(16, 16, 16, 16)
     main_layout.setSpacing(16)
+    outer_layout.addWidget(content_row, 1)
 
     # Controls shared by center panel
     w.load_button = QPushButton("Load Dataset")
@@ -288,42 +311,61 @@ def build_layout():
     w.vars_button = QPushButton("Select Variables")
     w.vars_button.setObjectName("accentButton")
     w.vars_button.setEnabled(False)
+    w.vars_button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     
     w.studio_btn = QPushButton("Publication Studio")
     w.studio_btn.setObjectName("actionButton")  # We can style it normally
     w.studio_btn.setEnabled(False)
-    w.studio_btn.setToolTip("Configure publication-ready names for outputs.")
+    w.studio_btn.setToolTip("Select variables to unlock Publication Studio.")
+    # Keep hidden until it's actually usable (typically later in the workflow).
+    w.studio_btn.setVisible(False)
     
-    w.selection_label = QLabel("Target: not selected | Features: 0")
-    w.selection_label.setObjectName("hintLabel")
+    w.selection_label = QLabel("0 Features Selected (Target pending)")
+    w.selection_label.setObjectName("selectionBadge")
     w.selection_label.setWordWrap(True)
+    w.selection_label.setMaximumWidth(420)
+    w.selection_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
     w.fe_checkbox = QCheckBox("Enable Feature Engineering")
     w.fe_checkbox.setEnabled(False)
     w.fe_checkbox.setToolTip("Create and use engineered features before training.")
 
-    # CV controls
-    cv_layout = QGridLayout()
-    cv_layout.setHorizontalSpacing(8)
-    cv_layout.setVerticalSpacing(6)
+    w.fe_info_btn = QPushButton("i")
+    w.fe_info_btn.setObjectName("inlineInfo")
+    w.fe_info_btn.setEnabled(True)
+    try:
+        w.fe_info_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    except Exception:
+        pass
+    w.fe_info_btn.setToolTip(
+        "Feature Engineering automatically imputes missing values, one-hot encodes categoricals, and scales numerical features."
+    )
+
+    # CV controls (compact, card-friendly)
     w.cv_mode_combo = NoWheelComboBox()
     w.cv_mode_combo.addItem("Repeated K-Fold (Recommended)", "repeated")
     w.cv_mode_combo.addItem("K-Fold", "kfold")
     w.cv_mode_combo.addItem("Nested CV (Thorough)", "nested")
     w.cv_mode_combo.addItem("Hold-Out (Fast)", "holdout")
     w.cv_mode_combo.setToolTip("Use click-to-select. Mouse wheel is disabled to prevent accidental changes.")
+    # Constrain widths to match expected input length.
+    w.cv_mode_combo.setMaximumWidth(250)
+    w.cv_mode_combo.setObjectName("cvMethodCombo")
     w.cv_spin = NoWheelSpinBox(); w.cv_spin.setMinimum(2); w.cv_spin.setValue(5)
+    try:
+        w.cv_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+    except Exception:
+        pass
+    w.cv_spin.setMaximumWidth(60)
+    w.cv_spin.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
     w.cv_spin.setToolTip("Folds value is changed by arrows or keyboard. Mouse wheel is disabled.")
+    w.cv_spin.setObjectName("cvFoldsSpin")
     w.cv_folds_label = QLabel("Folds:")
     w.cv_validation_label = QLabel("Validation:")
-    cv_layout.addWidget(w.cv_validation_label, 0, 0)
-    cv_layout.addWidget(w.cv_mode_combo, 0, 1, 1, 3)
-    cv_layout.addWidget(w.cv_folds_label, 1, 2)
-    cv_layout.addWidget(w.cv_spin, 1, 3)
-    cv_layout.setColumnStretch(1, 1)
 
     w.train_button = QPushButton("Start / Queue Training")
     w.train_button.setObjectName("trainButton")
     w.persist_output_checkbox = QCheckBox("Save outputs automatically")
+    w.persist_output_checkbox.setObjectName("persistOutputCheckbox")
     w.persist_output_checkbox.setChecked(False)
     w.persist_output_checkbox.setToolTip("When disabled, outputs are kept temporary and can be saved manually after training.")
     w.cancel_button = QPushButton("Cancel")
@@ -333,15 +375,14 @@ def build_layout():
     w.progress_bar = QProgressBar(); w.progress_bar.setVisible(False)
     w.plot_progress_bar = QProgressBar(); w.plot_progress_bar.setVisible(False)
 
-    # Checkboxes
+    # Model picker (inline)
     w.model_checks, model_group = create_model_checkboxes()
+    w.model_picker = model_group
     w.plot_checks, plot_group = create_plot_checkboxes()
     w.model_summary_label = QLabel("No model selected yet.")
     w.model_summary_label.setObjectName("hintLabel")
-    model_group.setVisible(False)
-
-    # Attach hidden widgets to main layout to prevent GC
-    main_layout.addWidget(model_group)
+    # Disabled until variables are selected (enabled by controller logic)
+    model_group.setEnabled(False)
 
     # Center panel: Controls + Plots
     center_panel = QWidget(); center_panel.setObjectName("workPanel")
@@ -440,6 +481,7 @@ def build_layout():
     w.config_card = QFrame()
     w.config_card.setObjectName("workflowCard")
     w.config_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    w.config_card.setMaximumWidth(800)
     config_card_layout = QVBoxLayout(w.config_card)
     config_card_layout.setContentsMargins(24, 24, 24, 24)
     config_card_layout.setSpacing(8)
@@ -455,34 +497,54 @@ def build_layout():
     
     config_card_layout.addSpacing(16)
     
-    vars_row = QHBoxLayout()
-    vars_row.setSpacing(12)
-    vars_row.addWidget(w.vars_button)
-    vars_row.addWidget(w.studio_btn)
-    vars_row.addStretch()
-    
-    config_card_layout.addLayout(vars_row)
-    
-    config_card_layout.addSpacing(12)
-    
-    w.config_summary_card = QFrame()
-    w.config_summary_card.setObjectName("summaryCard")
-    config_summary_layout = QVBoxLayout(w.config_summary_card)
-    config_summary_layout.setContentsMargins(16, 16, 16, 16)
-    config_summary_layout.setSpacing(12)
-    
-    config_summary_layout.addWidget(w.selection_label)
-    config_summary_layout.addWidget(w.fe_checkbox)
-    
-    separator = QFrame()
-    separator.setFrameShape(QFrame.Shape.HLine)
-    separator.setFrameShadow(QFrame.Shadow.Sunken)
-    separator.setStyleSheet("border: none; border-top: 1px solid #EBEBEE;")
-    config_summary_layout.addWidget(separator)
-    
-    config_summary_layout.addLayout(cv_layout)
-    
-    config_card_layout.addWidget(w.config_summary_card)
+    # Variables card
+    w.variables_card = QFrame()
+    w.variables_card.setObjectName("summaryCard")
+    variables_layout = QVBoxLayout(w.variables_card)
+    variables_layout.setContentsMargins(16, 16, 16, 16)
+    variables_layout.setSpacing(10)
+    variables_layout.addWidget(w.selection_label)
+
+    vars_action_row = QHBoxLayout()
+    vars_action_row.setContentsMargins(0, 0, 0, 0)
+    vars_action_row.setSpacing(8)
+    vars_action_row.addWidget(w.vars_button)
+    vars_action_row.addStretch(1)
+    variables_layout.addLayout(vars_action_row)
+
+    fe_row = QHBoxLayout()
+    fe_row.setContentsMargins(0, 0, 0, 0)
+    fe_row.setSpacing(8)
+    fe_row.addWidget(w.fe_checkbox)
+    fe_row.addWidget(w.fe_info_btn)
+    fe_row.addStretch(1)
+    variables_layout.addLayout(fe_row)
+    config_card_layout.addWidget(w.variables_card)
+
+    # Validation card
+    w.validation_card = QFrame()
+    w.validation_card.setObjectName("summaryCard")
+    validation_layout = QVBoxLayout(w.validation_card)
+    validation_layout.setContentsMargins(16, 16, 16, 16)
+    validation_layout.setSpacing(10)
+
+    w.validation_title = QLabel("Validation Settings")
+    w.validation_title.setObjectName("cardTitle")
+    validation_layout.addWidget(w.validation_title)
+
+    form = QFormLayout()
+    form.setContentsMargins(0, 0, 0, 0)
+    form.setHorizontalSpacing(12)
+    form.setVerticalSpacing(10)
+    try:
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    except Exception:
+        pass
+    form.addRow(QLabel("Method:"), w.cv_mode_combo)
+    form.addRow(QLabel("Number of folds:"), w.cv_spin)
+    validation_layout.addLayout(form)
+    validation_layout.addStretch(1)
+    config_card_layout.addWidget(w.validation_card)
     config_card_layout.addStretch(1)
 
     w.model_card = QFrame()
@@ -502,18 +564,12 @@ def build_layout():
     model_card_layout.addWidget(w.model_hint_label)
     
     model_card_layout.addSpacing(16)
-    
-    w.open_models_panel_btn = QPushButton("Choose Models...")
-    w.open_models_panel_btn.setObjectName("accentButton")
-    w.open_models_panel_btn.setToolTip("Open the model selection popup.")
-    w.open_models_panel_btn.setEnabled(False)
-    
-    model_action_row = QHBoxLayout()
-    model_action_row.addWidget(w.open_models_panel_btn)
-    model_action_row.addStretch()
-    model_card_layout.addLayout(model_action_row)
-    
-    model_card_layout.addSpacing(12)
+
+    model_body = QHBoxLayout()
+    model_body.setSpacing(16)
+    model_group.setObjectName("modelPicker")
+    model_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    model_body.addWidget(model_group, 2)
     
     w.model_badge_card = QFrame()
     w.model_badge_card.setObjectName("badgeCard")
@@ -522,7 +578,25 @@ def build_layout():
     w.model_summary_label.setObjectName("badgeLabel")
     model_badge_layout.addWidget(w.model_summary_label)
     model_badge_layout.addStretch()
-    model_card_layout.addWidget(w.model_badge_card)
+
+    w.model_selected_list = QListWidget()
+    w.model_selected_list.setObjectName("modelSelectedList")
+    w.model_selected_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+    try:
+        w.model_selected_list.setSpacing(2)
+    except Exception:
+        pass
+
+    w.model_sidebar = QFrame()
+    w.model_sidebar.setObjectName("modelSidebar")
+    model_sidebar_layout = QVBoxLayout(w.model_sidebar)
+    model_sidebar_layout.setContentsMargins(4, 6, 4, 4)
+    model_sidebar_layout.setSpacing(10)
+    model_sidebar_layout.addWidget(w.model_badge_card)
+    model_sidebar_layout.addWidget(w.model_selected_list, 1)
+
+    model_body.addWidget(w.model_sidebar, 1)
+    model_card_layout.addLayout(model_body, 1)
     model_card_layout.addStretch(1)
 
     w.run_card = QFrame()
@@ -543,15 +617,6 @@ def build_layout():
 
     run_card_layout.addSpacing(16)
 
-    row_train = QHBoxLayout()
-    row_train.setSpacing(12)
-    row_train.addWidget(w.train_button)
-    row_train.addWidget(w.cancel_button)
-    row_train.addStretch()
-    run_card_layout.addLayout(row_train)
-    
-    run_card_layout.addSpacing(12)
-
     w.run_summary_card = QFrame()
     w.run_summary_card.setObjectName("summaryCard")    
     run_summary_layout = QVBoxLayout(w.run_summary_card)
@@ -560,16 +625,65 @@ def build_layout():
     
     run_summary_layout.addWidget(w.persist_output_checkbox)
     
-    w.runtime_hint_label = QLabel("Estimated runtime: waiting for model selection")
-    w.runtime_hint_label.setObjectName("hintLabel")
-    run_summary_layout.addWidget(w.runtime_hint_label)
-    
     w.plot_summary_label = QLabel("")
     w.plot_summary_label.setObjectName("hintLabel")
     w.plot_summary_label.setWordWrap(True)
     run_summary_layout.addWidget(w.plot_summary_label)
 
     run_card_layout.addWidget(w.run_summary_card)
+
+    w.runtime_hint_label = QLabel("Estimated time: waiting for model selection")
+    w.runtime_hint_label.setObjectName("hintLabel")
+
+    # Keep the legacy status label for controller compatibility, but don't
+    # consume vertical space in Step 4 (footer already communicates status).
+    w.status_label = QLabel("")
+    w.status_label.setObjectName("trainBlockerLabel")
+    w.status_label.setWordWrap(True)
+    w.status_label.setProperty("severity", "neutral")
+    w.status_label.setVisible(False)
+
+    action_row = QHBoxLayout()
+    action_row.setSpacing(10)
+    action_row.addStretch(1)
+    action_row.addWidget(w.train_button, 0)
+    action_row.addWidget(w.runtime_hint_label, 0, Qt.AlignmentFlag.AlignVCenter)
+    action_row.addWidget(w.cancel_button, 0)
+    run_card_layout.addLayout(action_row)
+
+    # Placeholder dashboard (visible even before training)
+    w.skeleton_panel = QWidget()
+    skeleton_grid = QGridLayout(w.skeleton_panel)
+    skeleton_grid.setContentsMargins(0, 0, 0, 0)
+    skeleton_grid.setHorizontalSpacing(12)
+    skeleton_grid.setVerticalSpacing(12)
+
+    def _make_skeleton(title: str, height: int = 92):
+        card = QFrame()
+        card.setObjectName("skeletonCard")
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(10)
+        t = QLabel(title)
+        t.setObjectName("skeletonTitle")
+        box = QFrame()
+        box.setObjectName("skeletonBox")
+        box.setMinimumHeight(height)
+        lay.addWidget(t)
+        lay.addWidget(box)
+        return card
+
+    sk1 = _make_skeleton("Accuracy / R²", height=280)
+    sk2 = _make_skeleton("Residuals", height=280)
+    sk3 = _make_skeleton("Feature Importance", height=220)
+    sk4 = _make_skeleton("Diagnostics", height=220)
+    skeleton_grid.addWidget(sk1, 0, 0)
+    skeleton_grid.addWidget(sk2, 0, 1)
+    skeleton_grid.addWidget(sk3, 1, 0)
+    skeleton_grid.addWidget(sk4, 1, 1)
+    skeleton_grid.setColumnStretch(0, 1)
+    skeleton_grid.setColumnStretch(1, 1)
+    run_card_layout.addWidget(w.skeleton_panel)
 
     # Hidden action buttons: exposed via top menu for a cleaner workflow surface
     w.customize_plots_btn = QPushButton("Customize Plots…")
@@ -636,21 +750,13 @@ def build_layout():
     w.progress_panel.setVisible(False)
     run_card_layout.addWidget(w.progress_panel)
 
-    w.status_label = QLabel("Ready. Load a dataset to begin.")
-    w.status_label.setObjectName("statusPill")
-    w.status_label.setWordWrap(True)
-    w.status_label.setVisible(True)
-    run_card_layout.addWidget(w.status_label)
-
     w.feedback_focus_label = QLabel("Now: Ready\nNext: Load dataset\nBlockers: None")
-    w.feedback_focus_label.setObjectName("hintLabel")
+    w.feedback_focus_label.setObjectName("footerLabel")
     w.feedback_focus_label.setWordWrap(True)
-    run_card_layout.addWidget(w.feedback_focus_label)
 
     w.feedback_event_label = QLabel("Latest: No recent event\nJobs: No active jobs")
-    w.feedback_event_label.setObjectName("hintLabel")
+    w.feedback_event_label.setObjectName("footerLabel")
     w.feedback_event_label.setWordWrap(True)
-    run_card_layout.addWidget(w.feedback_event_label)
 
     w.step_tabs = QTabWidget()
     w.step_tabs.setObjectName("workflowTabs")
@@ -665,7 +771,7 @@ def build_layout():
     step_config = QWidget(); step_config_lay = QVBoxLayout(step_config)
     step_config_lay.setContentsMargins(0, 0, 0, 0)
     step_config_lay.setSpacing(8)
-    step_config_lay.addWidget(w.config_card, 1)
+    step_config_lay.addWidget(w.config_card, 0, Qt.AlignmentFlag.AlignHCenter)
 
     step_model = QWidget(); step_model_lay = QVBoxLayout(step_model)
     step_model_lay.setContentsMargins(0, 0, 0, 0)
@@ -727,7 +833,11 @@ def build_layout():
     w.metrics_table.horizontalHeader().setStretchLastSection(True)
     w.stats_table.horizontalHeader().setStretchLastSection(True)
     # Monospace font and no wrap for readability
-    mono = QFont("Consolas", 10)
+    try:
+        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        mono.setPointSize(10)
+    except Exception:
+        mono = QFont("Monospace", 10)
     w.result_box.setFont(mono)
     w.result_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
     w.stats_box.setFont(mono)
@@ -925,6 +1035,16 @@ def build_layout():
     center_panel.setMinimumWidth(360)
     w.center_panel = center_panel
     main_layout.addWidget(center_panel)
+
+    # Footer bar
+    w.footer_bar = QFrame()
+    w.footer_bar.setObjectName("footerBar")
+    footer_layout = QHBoxLayout(w.footer_bar)
+    footer_layout.setContentsMargins(16, 10, 16, 10)
+    footer_layout.setSpacing(16)
+    footer_layout.addWidget(w.feedback_focus_label, 1)
+    footer_layout.addWidget(w.feedback_event_label, 1)
+    outer_layout.addWidget(w.footer_bar, 0)
 
     # Convert right_panel to a standalone dialog
     w.results_dialog = QDialog(w)

@@ -169,11 +169,14 @@ def _compute_shap(best_pipe, X, num_cols, cat_cols, seed: int = 42, cancel_cb=No
     from evaluation.metrics import get_feature_names_from_pipe
     feat_names = get_feature_names_from_pipe(best_pipe, num_cols, cat_cols)
     X_proc = best_pipe.named_steps["prep"].transform(X)
+    is_df = hasattr(X_proc, "iloc")
+    if is_df:
+        feat_names = list(X_proc.columns)
     _raise_if_cancelled(cancel_cb)
     model_obj = best_pipe.named_steps["model"]
     n_sample = min(500, X_proc.shape[0])
     idx = np.random.RandomState(seed).choice(X_proc.shape[0], size=n_sample, replace=False)
-    Xs = X_proc[idx]
+    Xs = X_proc.iloc[idx] if is_df else X_proc[idx]
     
     # ML Pipeline Optimization: Fast TreeExplainer for ensemble models (O(1) background), 
     # and downsampled background for Exact/Kernel explainers to prevent GUI freeze.
@@ -191,7 +194,7 @@ def _compute_shap(best_pipe, X, num_cols, cat_cols, seed: int = 42, cancel_cb=No
     if explainer is None:
         # Prevent massive background datasets from crashing ExactExplainer
         bg_size = min(100, X_proc.shape[0])
-        bg = X_proc[np.random.RandomState(seed).choice(X_proc.shape[0], size=bg_size, replace=False)]
+        bg = X_proc.iloc[np.random.RandomState(seed).choice(X_proc.shape[0], size=bg_size, replace=False)] if is_df else X_proc[np.random.RandomState(seed).choice(X_proc.shape[0], size=bg_size, replace=False)]
         explainer = shap.Explainer(model_obj, bg)
         shap_output = explainer(Xs)
     _raise_if_cancelled(cancel_cb)
@@ -202,6 +205,62 @@ def _compute_shap(best_pipe, X, num_cols, cat_cols, seed: int = 42, cancel_cb=No
     # Unpack multi-output shap_values if returned as list or tuple
     if isinstance(shap_values, (list, tuple)):
         shap_values = shap_values[0]
+        
+    # ** OHE Feature Grouping for Academic Interpretability **
+    grouped_shap = []
+    grouped_Xs = []
+    grouped_feat_names = []
+    
+    if is_df and len(feat_names) == shap_values.shape[1]:
+        # Identify groups (OneHotEncoders usually output cat__OriginalName_Value)
+        # However, for OHE, we just look at the prefix before the last underscore, 
+        # but safely map it back to original cat_cols.
+        # Simple heuristic: if a feature starts with cat__ or starts with same name as a cat col.
+        used = set()
+        
+        # Base mapping from final names to original feature (if missing, identity)
+        group_mapping = []
+        for i, f_name in enumerate(feat_names):
+            base_col = f_name
+            # If from our Pipeline (starts with cat__) -> cat__Original_Cataegory -> Original
+            for c in list(cat_cols) + list(num_cols):
+                # Match either prefixed from sklearn ColumnTransformer or direct feature
+                if f_name.startswith(f"cat__{c}_") or f_name.startswith(f"num__{c}_") or f_name == f"cat__{c}" or f_name == f"num__{c}" or f_name.startswith(f"{c}_") or f_name == c:
+                    base_col = c
+                    break
+            group_mapping.append(base_col)
+            
+        unique_bases = []
+        for b in group_mapping:
+            if b not in unique_bases:
+                unique_bases.append(b)
+                
+        for base in unique_bases:
+            # Find indices for this base
+            base_indices = [i for i, b in enumerate(group_mapping) if b == base]
+            if len(base_indices) == 1:
+                grouped_shap.append(shap_values[:, base_indices[0]])
+                if hasattr(Xs, "iloc"):
+                    grouped_Xs.append(Xs.iloc[:, base_indices[0]].values)
+                else:
+                    grouped_Xs.append(Xs[:, base_indices[0]])
+            else:
+                # Group them! For SHAP values, we sum them across the OHE features.
+                grouped_shap.append(np.sum(shap_values[:, base_indices], axis=1))
+                # For X values of a categorical feature, we extract the original string data if possible!
+                # Since Xs is encoded, we just use the original dataset string values to plot color properly.
+                if base in X.columns:
+                    # original data
+                    grouped_Xs.append(X[base].iloc[idx].values)
+                else:
+                    grouped_Xs.append(np.zeros(shap_values.shape[0]))
+                
+            grouped_feat_names.append(base)
+            
+        shap_values = np.column_stack(grouped_shap)
+        Xs = pd.DataFrame({k: v for k, v in zip(grouped_feat_names, grouped_Xs)})
+        feat_names = grouped_feat_names
+        
     return feat_names, Xs, shap_values, idx
 
 

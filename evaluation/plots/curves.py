@@ -110,7 +110,8 @@ def plot_predictions_vs_actual(
     out_eval = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_eval, exist_ok=True)
     try:
-        preds = pipe.predict(X)
+        from sklearn.model_selection import cross_val_predict
+        preds = cross_val_predict(pipe, X, y, cv=5, n_jobs=-1)
     except Exception as e:
         with open(os.path.join(outdir, "Run_Log_and_Warnings.md"), 'a', encoding='utf-8') as f:
             f.write(f"\n### {model_name} Prediction Failed\n```text\nPrediction failed: {e}\n```\n")
@@ -124,7 +125,11 @@ def plot_predictions_vs_actual(
     try:
         from sklearn.metrics import r2_score, mean_squared_error
         r2 = r2_score(y, preds)
-        rmse_val = mean_squared_error(y, preds, squared=False)
+        try:
+            from sklearn.metrics import root_mean_squared_error
+            rmse_val = root_mean_squared_error(y, preds)
+        except ImportError:
+            rmse_val = mean_squared_error(y, preds, squared=False)
         fig, ax = plt.subplots(figsize=(7.8, 7.2))
         ax.scatter(y, preds, alpha=0.5, c='tab:green', edgecolor='none')
         lims = [min(float(y.min()), float(preds.min())), max(float(y.max()), float(preds.max()))]
@@ -132,8 +137,8 @@ def plot_predictions_vs_actual(
         text = f'$R^2$={r2:.2f}\nRMSE={rmse_val:.2f}'
         ax.text(0.05, 0.95, text, transform=ax.transAxes,
                 ha='left', va='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.7))
-        ax.set_xlabel('Actual', fontsize=12)
-        ax.set_ylabel('Predicted', fontsize=12)
+        ax.set_xlabel(f'{getattr(y, "name", "Actual") or "Actual"}', fontsize=12)
+        ax.set_ylabel(f'Predicted {getattr(y, "name", "") or ""}'.strip(), fontsize=12)
         top_margin = _apply_plot_header(fig, f'Predictions vs Actual - {model_name}')
         ax.grid(True, linestyle='--', alpha=0.5)
         fig.subplots_adjust(left=0.12, right=0.97, bottom=0.12, top=top_margin)

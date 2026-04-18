@@ -35,7 +35,8 @@ def plot_residuals(
     out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
-        preds = pipe.predict(X)
+        from sklearn.model_selection import cross_val_predict
+        preds = cross_val_predict(pipe, X, y, cv=5, n_jobs=-1)
         resid = y - preds
         
         # Calculate true statistics before sampling plot rendering
@@ -58,7 +59,7 @@ def plot_residuals(
         text = f'Mean={mu:.2f}\nStd={sigma:.2f}'
         ax.text(0.95, 0.95, text, transform=ax.transAxes,
                 ha='right', va='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.7))
-        ax.set_xlabel('Predicted', fontsize=12)
+        ax.set_xlabel(f'Predicted {getattr(y, "name", "") or ""}'.strip(), fontsize=12)
         ax.set_ylabel('Residuals', fontsize=12)
         ax.set_title(f'Residuals - {model_name}', fontsize=14)
         ax.grid(True, linestyle='--', alpha=0.5)
@@ -78,7 +79,8 @@ def plot_residual_distribution(
     out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
-        preds = pipe.predict(X)
+        from sklearn.model_selection import cross_val_predict
+        preds = cross_val_predict(pipe, X, y, cv=5, n_jobs=-1)
         resid = y - preds
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.histplot(resid, bins=30, stat='density', color='skyblue', edgecolor='black', alpha=0.6, ax=ax)
@@ -108,7 +110,8 @@ def plot_qq(
     out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
-        preds = pipe.predict(X)
+        from sklearn.model_selection import cross_val_predict
+        preds = cross_val_predict(pipe, X, y, cv=5, n_jobs=-1)
         resid = y - preds
         (osm, osr), (slope, intercept, r) = stats.probplot(resid, dist='norm')
         r2 = r**2

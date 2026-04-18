@@ -1,109 +1,12 @@
-# models/train.py
+import re
 
-from sklearn.linear_model import LinearRegression, RidgeCV, LassoCV, ElasticNetCV
-from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.svm import SVR
-from sklearn.neighbors import KNeighborsRegressor
+with open('models/train.py', 'r', encoding='utf-8') as f:
+    content = f.read()
 
-try:
-    from xgboost import XGBRegressor
-    XGB_OK = True
-except ImportError:
-    XGB_OK = False
+# We need to rewrite the evaluation block exactly so that it handles hold-out correctly,
+# and kfold/repeated/nested actually run correctly without clobbering each other.
 
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import cross_validate, KFold, RepeatedKFold, GridSearchCV, train_test_split, StratifiedKFold
-from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error, make_scorer
-import time
-import os
-from utils.logger import get_logger
-
-# define rmse natively
-def rmse(y_true, y_pred):
-    return root_mean_squared_error(y_true, y_pred)
-
-import numpy as np
-import pandas as pd
-
-
-LOGGER = get_logger(__name__)
-
-
-def _safe_call(cb, *args, context: str):
-    if not callable(cb):
-        return
-    try:
-        cb(*args)
-    except Exception:
-        LOGGER.exception("Non-fatal callback failure (%s)", context)
-
-from config import RSTATE, CV_MODE, CV_FOLDS, CV_REPEATS, NESTED_OUTER_FOLDS, NESTED_INNER_FOLDS
-try:
-    from config import CV_STRATIFY
-except Exception:
-    CV_STRATIFY = 'none'
-from config.selections import get_selected_models
-
-
-def train_and_evaluate(
-    X, y, preprocessor, model_names=None, progress_callback=None,
-    cv_mode='kfold', cv_folds=5, log_callback=None, model_status_callback=None
-):
-    model_names = get_selected_models(model_names)
-
-    all_models = {
-        "LinearRegression": LinearRegression(),
-        "RidgeCV": RidgeCV(alphas=np.logspace(-3, 3, 13)),
-        "RandomForest": RandomForestRegressor(n_estimators=500, random_state=RSTATE, n_jobs=-1),
-        "HistGB": HistGradientBoostingRegressor(
-            random_state=RSTATE, early_stopping=True, validation_fraction=0.1, n_iter_no_change=10
-        ),
-        "GradientBoostingRegressor": GradientBoostingRegressor(
-            random_state=RSTATE, validation_fraction=0.1, n_iter_no_change=10
-        ),
-        "Lasso": LassoCV(alphas=np.logspace(-3, 3, 13), random_state=RSTATE, cv=5),
-        "ElasticNet": ElasticNetCV(alphas=np.logspace(-3, 3, 13), l1_ratio=[0.1, 0.5, 0.9], random_state=RSTATE, cv=5),
-        "SVR": SVR(),
-        "KNeighborsRegressor": KNeighborsRegressor(),
-    }
-
-    if XGB_OK:
-        all_models["XGBoost"] = XGBRegressor(
-            n_estimators=800, learning_rate=0.05, max_depth=6,
-            subsample=0.9, colsample_bytree=0.9, reg_lambda=1.0,
-            tree_method='hist', random_state=RSTATE, n_jobs=-1
-        )
-
-    scoring = {
-        "R2": make_scorer(r2_score),
-        "MAE": make_scorer(mean_absolute_error, greater_is_better=False),
-        "RMSE": make_scorer(rmse, greater_is_better=False),
-    }
-
-    rows, fitted = [], {}
-    # Optional y-decile stratification for regression
-    y_strata = None
-    try:
-        if CV_STRATIFY and str(CV_STRATIFY).lower() == 'deciles':
-            y_series = pd.Series(y)
-            # use rank to avoid duplicate edges, then qcut
-            y_strata = pd.qcut(y_series.rank(method='first'), q=10, labels=False, duplicates='drop')
-    except Exception:
-        y_strata = None
-    total = len(model_names)
-    for idx, name in enumerate(model_names):
-        if name not in all_models:
-            continue
-        pipe = Pipeline([("prep", preprocessor), ("model", all_models[name])])
-
-        if callable(log_callback):
-            _safe_call(log_callback, f"[Start] {name}", context="log_callback:start")
-        if callable(model_status_callback):
-            _safe_call(model_status_callback, name, "start", context="model_status_callback:start")
-
-        # — run either repeated/k-fold/nested CV or simple hold-out
-        mode = cv_mode or CV_MODE
+replacement = """        mode = cv_mode or CV_MODE
         per_split = {}
         if mode == 'kfold':
             if y_strata is not None:
@@ -174,12 +77,13 @@ def train_and_evaluate(
 
             if y_strata is not None:
                 skf_outer = StratifiedKFold(n_splits=NESTED_OUTER_FOLDS, shuffle=True, random_state=RSTATE)
-                outer = list(skf_outer.split(X, y_strata))
+                outer = skf_outer.split(X, y_strata)
             else:
                 outer = KFold(n_splits=NESTED_OUTER_FOLDS, shuffle=True, random_state=RSTATE)
-            
-            # GridSearchCV does cv.split(X, y), which breaks StratifiedKFold for continuous y, so we use KFold inner
-            inner = KFold(n_splits=NESTED_INNER_FOLDS, shuffle=True, random_state=RSTATE)
+            if y_strata is not None:
+                inner = StratifiedKFold(n_splits=NESTED_INNER_FOLDS, shuffle=True, random_state=RSTATE)
+            else:
+                inner = KFold(n_splits=NESTED_INNER_FOLDS, shuffle=True, random_state=RSTATE)
 
             if param_grid:
                 gs = GridSearchCV(pipe, param_grid=param_grid, cv=inner,
@@ -221,33 +125,10 @@ def train_and_evaluate(
             pipe.fit(X, y)
             final_pipe = pipe
 
-        y_hat = final_pipe.predict(X)
-        # compute training statistics
-        r2_train = r2_score(y, y_hat)
-        mae_train = mean_absolute_error(y, y_hat)
-        rmse_train = rmse(y, y_hat)
-        rows.append({
-            "model":       name,
-            "R2_CV":       float(r2_mean),
-            "MAE_CV":      float(mae_mean),
-            "RMSE_CV":     float(rmse_mean),
-            "R2_train":    float(r2_train),
-            "MAE_train":   float(mae_train),
-            "RMSE_train":  float(rmse_train),
-            "TrainingTime": float(train_time)
-        })
-        fitted[name] = {"pipe": final_pipe, "holdout": (X, y, y_hat), "cv_mode": mode, "cv_scores": per_split}
-        if progress_callback is not None:
-            _safe_call(progress_callback, idx + 1, total, context="progress_callback")
+        y_hat = final_pipe.predict(X)"""
 
-        if callable(log_callback):
-            _safe_call(
-                log_callback,
-                f"[Done] {name} | R2_CV={r2_mean:.4f} RMSE_CV={rmse_mean:.4f}",
-                context="log_callback:done",
-            )
-        if callable(model_status_callback):
-            _safe_call(model_status_callback, name, "done", context="model_status_callback:done")
+pattern = r"        mode = cv_mode or CV_MODE\n        per_split = None.*?        y_hat = final_pipe\.predict\(X\)"
+new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
 
-    metrics_df = pd.DataFrame(rows).sort_values("R2_CV", ascending=False)
-    return metrics_df, fitted
+with open('models/train.py', 'w', encoding='utf-8') as f:
+    f.write(new_content)

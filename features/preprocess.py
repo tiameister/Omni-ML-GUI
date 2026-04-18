@@ -2,17 +2,16 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder, FunctionTransformer
+from features.feature_engineering import FeatureEngineeringTransformer
 
 
 def _to_uniform_string(X):
     import pandas as pd
-    # Ensure immediate conversion array -> pd.DataFrame -> str natively on C backend
-    # This prevents object-by-object fallback on failure
     if not isinstance(X, pd.DataFrame):
         X = pd.DataFrame(X)
     return X.astype(str)
 
-def build_preprocessor(num_cols, cat_cols, ordinal_cols=None, binary_cols=None):
+def build_preprocessor(num_cols, cat_cols, ordinal_cols=None, binary_cols=None, fe_enabled=False):
     """
     Returns a ColumnTransformer with:
     - numeric: impute + StandardScaler
@@ -29,6 +28,7 @@ def build_preprocessor(num_cols, cat_cols, ordinal_cols=None, binary_cols=None):
     cat_other = [c for c in cat_cols if c not in set(ordinal_cols) and c not in set(binary_cols)]
 
     numeric_pipeline = Pipeline([
+        ("fe", FeatureEngineeringTransformer(fe_enabled=fe_enabled)),
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler())
     ])
@@ -43,7 +43,7 @@ def build_preprocessor(num_cols, cat_cols, ordinal_cols=None, binary_cols=None):
             # 'most_frequent' does a costly full-dataset string frequency count. 'Missing' acts as O(1) constant imputation natively.
             ("imputer", SimpleImputer(strategy="constant", fill_value="Missing")),
             ("to_string", FunctionTransformer(_to_uniform_string, validate=False)),
-            ("encoder", OneHotEncoder(handle_unknown="ignore"))
+            ("encoder", OneHotEncoder(handle_unknown="infrequent_if_exist", min_frequency=0.015, max_categories=20, sparse_output=False))
         ])
         from sklearn.pipeline import Pipeline as _Pipeline
         from sklearn.impute import SimpleImputer as _SimpleImputer
@@ -58,16 +58,18 @@ def build_preprocessor(num_cols, cat_cols, ordinal_cols=None, binary_cols=None):
             ("cat", categorical_pipeline, cat_other),
         ]
         preprocessor = ColumnTransformer(transformers, remainder='drop')
+        preprocessor.set_output(transform="pandas")
     else:
         categorical_pipeline = Pipeline([
             # 'most_frequent' does a costly full-dataset string frequency count. 'Missing' acts as O(1) constant imputation natively.
             ("imputer", SimpleImputer(strategy="constant", fill_value="Missing")),
             ("to_string", FunctionTransformer(_to_uniform_string, validate=False)),
-            ("encoder", OneHotEncoder(handle_unknown="ignore"))
+            ("encoder", OneHotEncoder(handle_unknown="infrequent_if_exist", min_frequency=0.015, max_categories=20, sparse_output=False))
         ])
         preprocessor = ColumnTransformer([
             ("num", numeric_pipeline, num_cols),
             ("cat", categorical_pipeline, cat_cols),
         ])
+        preprocessor.set_output(transform="pandas")
 
     return preprocessor

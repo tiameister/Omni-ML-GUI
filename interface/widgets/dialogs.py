@@ -959,7 +959,10 @@ class AboutDialog(QDialog):
         title = QLabel(tr("dialogs.about.app_title", default="Machine Learning Trainer"))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         from PyQt6.QtGui import QFont
-        title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        title_font = QFont()
+        title_font.setPointSize(18)
+        title_font.setWeight(QFont.Weight.Bold)
+        title.setFont(title_font)
         title.setObjectName("titleLabel")
         
         subtitle = QLabel(tr("dialogs.about.app_subtitle", default="Professional Regression Model Training and Evaluation"))
@@ -983,7 +986,10 @@ class AboutDialog(QDialog):
         v_dev.setSpacing(12)
         
         dev_title = QLabel(tr("dialogs.about.dev_title", default="Developer / Author"))
-        dev_title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        dev_title_font = QFont()
+        dev_title_font.setPointSize(16)
+        dev_title_font.setWeight(QFont.Weight.Bold)
+        dev_title.setFont(dev_title_font)
         dev_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v_dev.addWidget(dev_title)
         

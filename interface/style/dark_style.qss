@@ -1,6 +1,5 @@
 /* Global Theme */
 * {
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Segoe UI", "Segoe UI Variable Text", Tahoma, sans-serif;
   font-size: 10.5pt;
   color: #FFFFFF;
 }
@@ -83,7 +82,6 @@ QWidget {
   max-width: 30px;
   min-height: 30px;
   max-height: 30px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   font-weight: 800;
   font-size: 15px;
 }
@@ -218,15 +216,250 @@ QGroupBox {
 }
 
 #badgeCard {
-  border: 1px solid #3A3A3C;
-  border-radius: 8px;
-  background: #2C2C2E;
+  border: none;
+  border-radius: 0px;
+  background: transparent;
 }
 
 #badgeLabel {
-  color: #0A84FF;
-  font-weight: 550;
-  font-size: 13.5px;
+  color: #E8EBF0;
+  font-weight: 750;
+  font-size: 12pt;
+}
+
+QLabel#cardTitle {
+  color: #E8EBF0;
+  font-size: 11pt;
+  font-weight: 750;
+}
+
+/* Step 2: Variables status badge */
+QLabel#selectionBadge {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 750;
+  font-size: 10.6pt;
+}
+
+QLabel#selectionBadge[state="blocked"] {
+  background: #2B1515;
+  border: 1px solid #5A2A2A;
+  color: #F3C9C9;
+}
+
+QLabel#selectionBadge[state="pending"] {
+  background: #2A2313;
+  border: 1px solid #5A4B23;
+  color: #F1E1B2;
+}
+
+QLabel#selectionBadge[state="ready"] {
+  background: #13251B;
+  border: 1px solid #2B4D3A;
+  color: #BFEAD0;
+}
+
+QComboBox#cvMethodCombo {
+  max-width: 250px;
+}
+
+QSpinBox#cvFoldsSpin {
+  max-width: 60px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #14171C;
+  border: 1px solid #333843;
+}
+
+QPushButton#inlineInfo {
+  margin-left: 8px;
+  background: #2C2C2E;
+  border: none;
+  border-radius: 10px;
+  min-width: 20px;
+  max-width: 20px;
+  min-height: 20px;
+  max-height: 20px;
+  color: #C7CCD4;
+  font-weight: 800;
+  padding: 0px;
+}
+
+QPushButton#inlineInfo:hover {
+  color: #FFFFFF;
+  background: #3A3A3C;
+}
+
+/* Models (Step 3) */
+#modelSidebar {
+  background: transparent;
+}
+
+QPushButton[chip="true"] {
+  background: #2A2A2E;
+  color: #E8EBF0;
+  border: 1px solid #3A3A3C;
+  border-radius: 999px;
+  padding: 6px 12px;
+  min-height: 28px;
+  font-weight: 700;
+}
+
+QPushButton[chip="true"]:hover {
+  background: #34343A;
+}
+
+QPushButton[chip="true"]:checked {
+  background: #0A84FF;
+  color: #FFFFFF;
+  border: none;
+}
+
+#modelSelectedList {
+  background: #15171B;
+  border: 1px solid #2A2E36;
+  border-radius: 12px;
+  padding: 8px;
+}
+
+#modelSelectedList::item {
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+#modelSelectedList::item:hover {
+  background: #1B1F26;
+}
+
+#modelCard {
+  background: #14171C;
+  border: 2px solid #2A2E36;
+  border-radius: 12px;
+}
+
+#modelCard:hover {
+  border-color: #3D5F7A;
+  background: #161A20;
+}
+
+#modelCard[selected="true"] {
+  border-color: #0A84FF;
+  background: #111B28;
+}
+
+#modelCardTitle {
+  color: #E8EBF0;
+  font-weight: 750;
+  font-size: 11pt;
+}
+
+#modelCardTag {
+  background: #0E2436;
+  border: 1px solid #1F3B55;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #7CC0FF;
+  font-weight: 600;
+  font-size: 9pt;
+}
+
+#modelCardDesc {
+  color: #A7B0BC;
+  font-size: 9.8pt;
+}
+
+QPushButton#modelToggle {
+  background: #14171C;
+  color: #E8EBF0;
+  border: 1px solid #333843;
+  border-radius: 10px;
+  padding: 6px 12px;
+  min-height: 28px;
+  font-weight: 650;
+}
+
+QPushButton#modelToggle:hover {
+  border-color: #0A84FF;
+  background: #151A22;
+}
+
+QPushButton#modelToggle:checked {
+  background: #0A84FF;
+  color: #FFFFFF;
+  border: none;
+}
+
+QPushButton#removeChip {
+  background: transparent;
+  border: none;
+  color: #E8EBF0;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 8px;
+  min-width: 24px;
+  min-height: 24px;
+  font-size: 12pt;
+}
+
+QPushButton#removeChip:hover {
+  background: #1B1F26;
+  color: #E8EBF0;
+}
+
+/* Step 4 placeholders */
+#skeletonCard {
+  border: 1px solid #2A2E36;
+  border-radius: 12px;
+  background: #14171C;
+}
+
+#skeletonTitle {
+  color: #E8EBF0;
+  font-weight: 700;
+}
+
+#skeletonBox {
+  background: #1B1F26;
+  border-radius: 10px;
+  border: 1px solid #2A2E36;
+}
+
+QCheckBox#persistOutputCheckbox {
+  font-weight: 750;
+  font-size: 10.8pt;
+}
+
+QCheckBox#persistOutputCheckbox::indicator {
+  width: 18px;
+  height: 18px;
+}
+
+QLabel#trainBlockerLabel {
+  padding: 0px;
+  font-weight: 600;
+}
+
+QLabel#trainBlockerLabel[severity="neutral"] {
+  color: #A7B0BC;
+}
+
+QLabel#trainBlockerLabel[severity="warn"] {
+  color: #F1E1B2;
+}
+
+/* Footer bar */
+#footerBar {
+  background: #14171C;
+  border-top: 1px solid #2A2E36;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  border-radius: 0px;
+}
+
+#footerLabel {
+  color: #A7B0BC;
+  font-size: 9.6pt;
 }
 
 #workflowCard::title {
@@ -252,6 +485,61 @@ QSpinBox {
   padding: 6px 12px;
   min-height: 28px;
   border-radius: 8px;
+}
+
+/* Scrollbars (Spotify/VS Code style) */
+QScrollBar:vertical {
+  background: transparent;
+  width: 8px;
+  margin: 2px;
+}
+
+QScrollBar::handle:vertical {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  min-height: 32px;
+}
+
+QScrollBar::handle:vertical:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+  height: 0px;
+  subcontrol-origin: margin;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+  background: transparent;
+}
+
+QScrollBar:horizontal {
+  background: transparent;
+  height: 8px;
+  margin: 2px;
+}
+
+QScrollBar::handle:horizontal {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  min-width: 32px;
+}
+
+QScrollBar::handle:horizontal:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+  width: 0px;
+  subcontrol-origin: margin;
+}
+
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+  background: transparent;
 }
 
 #commandPaletteSearch {
@@ -483,19 +771,20 @@ QTabBar::tab:selected {
   min-width: 100px;
   padding: 10px 16px;
   font-weight: 500;
-  border-radius: 10px;
+  border-radius: 0px;
   margin-right: 8px;
 }
 
 #workflowTabs QTabBar::tab:hover {
-  background: #2A2A2C;
+  background: transparent;
 }
 
 #workflowTabs QTabBar::tab:selected {
   color: #0A84FF;
-  border-bottom: 2px solid transparent;
-  background: #1E1E1E;
-  border: 1px solid #3A3A3C;
+  border: none;
+  border-bottom: 2px solid #0A84FF;
+  background: transparent;
+  font-weight: 600;
 }
 
 #workflowTabs QTabBar::tab:disabled {
