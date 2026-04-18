@@ -142,7 +142,37 @@ def read_dataset_safely(path: str) -> Tuple[pd.DataFrame, str]:
     if not path:
         raise DataLoadError("Dataset path is empty")
 
-    suffix = Path(path).suffix.lower()
+    p = Path(path)
+    if not p.exists():
+        raise DataLoadError(f"Dataset not found: {path}")
+    if not p.is_file():
+        raise DataLoadError("Dataset path must be a regular file (not a directory or special device).")
+
+    # Guardrail: prevent accidental multi-GB loads that can freeze the UI and exhaust memory.
+    # Set MLTRAINER_MAX_DATASET_MB=0 to disable.
+    try:
+        raw_max_mb = str(os.environ.get("MLTRAINER_MAX_DATASET_MB", "1024")).strip()
+        max_mb = float(raw_max_mb) if raw_max_mb else 0.0
+    except Exception:
+        max_mb = 0.0
+    if max_mb and max_mb > 0:
+        try:
+            size_bytes = int(p.stat().st_size)
+            limit_bytes = int(max_mb * 1024 * 1024)
+            if limit_bytes > 0 and size_bytes > limit_bytes:
+                size_mb = size_bytes / (1024 * 1024)
+                raise DataLoadError(
+                    f"Dataset is too large ({size_mb:.1f} MB). "
+                    f"Limit is {max_mb:.0f} MB. "
+                    "Increase MLTRAINER_MAX_DATASET_MB to allow larger files."
+                )
+        except DataLoadError:
+            raise
+        except Exception:
+            # If size can't be determined, proceed with parsing.
+            pass
+
+    suffix = p.suffix.lower()
     if suffix in EXCEL_EXTENSIONS:
         return _read_excel_safely(path)
     return _read_csv_with_sniffing(path)

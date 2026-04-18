@@ -617,6 +617,15 @@ class MLTrainerApp(QMainWindow):
         c.cv_mode_combo.currentIndexChanged.connect(self._on_user_setting_changed)
         c.cv_spin.valueChanged.connect(self._on_user_setting_changed)
 
+        if hasattr(c, "step_tabs"):
+            c.step_tabs.currentChanged.connect(
+                lambda _idx: self._sync_step_tab_titles(
+                    has_data=self.state.df is not None,
+                    has_variables=bool(self.state.target is not None and self.state.features),
+                    has_models=any(chk.isChecked() for chk in c.model_checks.values()),
+                )
+            )
+
         if hasattr(c, "jobs_run_next_btn"):
             c.jobs_run_next_btn.clicked.connect(self._start_next_queued_job)
         if hasattr(c, "jobs_retry_failed_btn"):
@@ -1940,6 +1949,8 @@ class MLTrainerApp(QMainWindow):
         has_models = any(chk.isChecked() for chk in c.model_checks.values())
         if not has_data:
             c.vars_button.setEnabled(False)
+            if hasattr(c, "vars_blocked_hint"):
+                c.vars_blocked_hint.setVisible(True)
             if hasattr(c, "studio_btn"):
                 c.studio_btn.setEnabled(False)
             c.preview_button.setEnabled(False)
@@ -1947,14 +1958,11 @@ class MLTrainerApp(QMainWindow):
             c.fe_checkbox.setChecked(False)
             c.fe_checkbox.blockSignals(False)
             c.fe_checkbox.setEnabled(False)
-            c.selection_label.setText(
-                tr(
-                    "status.variables_none_no_data",
-                    default="Load a dataset to select variables",
-                )
-            )
+            try:
+                c.selection_label.setVisible(False)
+            except Exception:
+                pass
             self._set_step2_selection_badge_state("blocked")
-            c.selection_label.setToolTip("")
             c.kpi_target_value.setText(tr("status.kpi.not_selected", default="Not selected"))
             c.train_button.setEnabled(False)
             if hasattr(c, "model_picker"):
@@ -1965,8 +1973,14 @@ class MLTrainerApp(QMainWindow):
             return
 
         c.vars_button.setEnabled(True)
+        if hasattr(c, "vars_blocked_hint"):
+            c.vars_blocked_hint.setVisible(False)
         c.preview_button.setEnabled(True)
         c.fe_checkbox.setEnabled(True)
+        try:
+            c.selection_label.setVisible(True)
+        except Exception:
+            pass
 
         if self.state.target is None or not self.state.features:
             if hasattr(c, "studio_btn"):
@@ -3010,9 +3024,12 @@ class MLTrainerApp(QMainWindow):
             ok_icon = QIcon()
 
         try:
-            c.step_tabs.setTabIcon(0, ok_icon if has_data else QIcon())
-            c.step_tabs.setTabIcon(1, ok_icon if has_variables else QIcon())
-            c.step_tabs.setTabIcon(2, ok_icon if has_models else QIcon())
+            # Only show checkmarks for *past* steps that are validated.
+            # This prevents a "time-travel" checkmark from appearing on future tabs.
+            current_idx = int(c.step_tabs.currentIndex())
+            c.step_tabs.setTabIcon(0, ok_icon if (has_data and current_idx > 0) else QIcon())
+            c.step_tabs.setTabIcon(1, ok_icon if (has_variables and current_idx > 1) else QIcon())
+            c.step_tabs.setTabIcon(2, ok_icon if (has_models and current_idx > 2) else QIcon())
             if c.step_tabs.count() > 3:
                 c.step_tabs.setTabIcon(3, QIcon())
         except Exception:

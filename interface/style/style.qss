@@ -303,11 +303,11 @@ QLabel#selectionBadge[state="ready"] {
 }
 
 QComboBox#cvMethodCombo {
-  max-width: 420px;
+  max-width: 300px;
 }
 
 QSpinBox#cvFoldsSpin {
-  max-width: 120px;
+  max-width: 80px;
   padding: 6px 10px;
   border-radius: 999px;
   background: #FFFFFF;
@@ -781,9 +781,9 @@ QTabBar::tab:selected {
 
 #workflowTabs QTabBar::tab:selected {
   color: #007AFF;
-  border-bottom: 2px solid transparent;
-  background: #FFFFFF;
-  border: 1px solid #DCDCE0;
+  border: none;
+  border-bottom: 2px solid #007AFF;
+  background: transparent;
 }
 
 #workflowTabs QTabBar::tab:disabled {

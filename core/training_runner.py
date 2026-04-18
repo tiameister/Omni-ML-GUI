@@ -63,17 +63,39 @@ def _run_optional_script(
     import subprocess
     import sys
     import os
-    import time
     from pathlib import Path
 
     root = _project_root_dir()
-    script_path = os.path.join(root, "scripts", filename)
-    if not os.path.exists(script_path):
-        return False, f"Script not found: scripts/{filename}"
+    scripts_dir = Path(root) / "scripts"
+
+    raw_name = str(filename or "").strip()
+    if not raw_name:
+        return False, "Script filename is empty"
+
+    # Block path traversal / absolute paths. Optional scripts must be basenames under ./scripts.
+    if "/" in raw_name or "\\" in raw_name:
+        return False, f"Invalid script name (must be a basename): {raw_name}"
+    if not raw_name.endswith(".py"):
+        return False, f"Invalid script name (expected .py): {raw_name}"
+
+    try:
+        script_path_obj = (scripts_dir / raw_name).resolve()
+        scripts_dir_resolved = scripts_dir.resolve()
+        script_path_obj.relative_to(scripts_dir_resolved)
+    except Exception:
+        return False, f"Invalid script path: scripts/{raw_name}"
+
+    if not script_path_obj.exists():
+        return False, f"Script not found: scripts/{raw_name}"
+    if not script_path_obj.is_file():
+        return False, f"Script is not a file: scripts/{raw_name}"
+
+    script_path = str(script_path_obj)
 
     env = os.environ.copy()
-    existing_pp = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = root if not existing_pp else f"{root}{os.pathsep}{existing_pp}"
+    # Do not inherit caller-provided PYTHONPATH (prevents module injection).
+    env.pop("PYTHONPATH", None)
+    env["PYTHONPATH"] = root
 
     if env_overrides:
         for k, v in env_overrides.items():
@@ -88,11 +110,13 @@ def _run_optional_script(
             [sys.executable, "-X", "faulthandler", script_path],
             cwd=cwd or root,
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
-            universal_newlines=True
+            universal_newlines=True,
+            close_fds=True,
         ) as proc:
             
             stdout_data, stderr_data = [], []
@@ -112,7 +136,17 @@ def _run_optional_script(
                     if out: stdout_data.append(out.strip())
                     if err: stderr_data.append(err.strip())
                     break
-                except subprocess.TimeoutExpired:
+                except subprocess.TimeoutExpired as exc:
+                    # Drain partial output to avoid pipe buffers filling up.
+                    try:
+                        partial_out = getattr(exc, "stdout", None) or getattr(exc, "output", None)
+                        partial_err = getattr(exc, "stderr", None)
+                        if partial_out:
+                            stdout_data.append(str(partial_out).strip())
+                        if partial_err:
+                            stderr_data.append(str(partial_err).strip())
+                    except Exception:
+                        pass
                     continue
 
             return proc.returncode == 0, "\n".join(stdout_data + stderr_data) or f"Exit {proc.returncode}"

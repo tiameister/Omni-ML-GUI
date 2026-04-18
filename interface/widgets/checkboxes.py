@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QSizePolicy,
 )
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 
 
@@ -463,7 +463,19 @@ def create_model_checkboxes():
         t = (text or '').strip().lower()
         for name, fr in model_cards.items():
             fr.setVisible((t in name.lower()) if t else True)
-    filter_edit.textChanged.connect(apply_filter)
+
+    # Debounce filter updates to keep typing responsive on large UIs.
+    _filter_timer = QTimer(group)
+    _filter_timer.setSingleShot(True)
+    _filter_timer.setInterval(120)
+
+    def _apply_filter_now():
+        apply_filter(filter_edit.text())
+
+    _filter_timer.timeout.connect(_apply_filter_now)
+    filter_edit.textChanged.connect(lambda _t: _filter_timer.start())
+    _apply_filter_now()
+    group._filter_timer = _filter_timer
 
     def apply_preset(names: set[str]):
         for name, cb in checks.items():

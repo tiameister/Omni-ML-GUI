@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QGridLayout, QFrame, QListWidget, QListWidgetItem, QFileDialog,
     QTabWidget, QTextEdit
 )
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt, QSettings, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import QMessageBox
 import json
@@ -232,7 +232,18 @@ class ColumnSelectionDialog(QDialog):
             for name, cb in self.feats.items():
                 cb.setVisible(t in name.lower() if t else True)
             self._update_ok()
-        self.filter_edit.textChanged.connect(apply_filter)
+
+        # Debounce filter updates for large column lists.
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(120)
+
+        def _apply_filter_now():
+            apply_filter(self.filter_edit.text())
+
+        self._filter_timer.timeout.connect(_apply_filter_now)
+        self.filter_edit.textChanged.connect(lambda _t: self._filter_timer.start())
+        _apply_filter_now()
 
         def set_all(state: bool):
             for cb in self.feats.values():
@@ -411,7 +422,17 @@ class ModelSelectionDialog(QDialog):
                 cb.setVisible((t in name.lower()) if t else True)
             self._update_ok()
 
-        self.search_edit.textChanged.connect(apply_filter)
+        # Debounce to avoid repaint churn while typing.
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(120)
+
+        def _apply_search_now():
+            apply_filter(self.search_edit.text())
+
+        self._search_timer.timeout.connect(_apply_search_now)
+        self.search_edit.textChanged.connect(lambda _t: self._search_timer.start())
+        _apply_search_now()
 
         def set_visible(state: bool):
             for cb in self.model_checks.values():
@@ -669,7 +690,18 @@ class PlotSelectionDialog(QDialog):
                 if header is not None:
                     header.setVisible(any_visible)
             self._update_summary()
-        self.search_edit.textChanged.connect(apply_plot_filter)
+
+        # Debounce filter updates; plot lists can be long.
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(120)
+
+        def _apply_plot_filter_now():
+            apply_plot_filter(self.search_edit.text())
+
+        self._search_timer.timeout.connect(_apply_plot_filter_now)
+        self.search_edit.textChanged.connect(lambda _t: self._search_timer.start())
+        _apply_plot_filter_now()
 
         # Initial summary, geometry restore/persist
         self._update_summary()

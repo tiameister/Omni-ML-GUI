@@ -344,18 +344,17 @@ def build_layout():
     w.cv_mode_combo.addItem("Nested CV (Thorough)", "nested")
     w.cv_mode_combo.addItem("Hold-Out (Fast)", "holdout")
     w.cv_mode_combo.setToolTip("Use click-to-select. Mouse wheel is disabled to prevent accidental changes.")
-    # Keep field widths aligned in the form for a clean vertical axis.
-    form_field_w = 320
-    w.cv_mode_combo.setMinimumWidth(form_field_w)
-    w.cv_mode_combo.setMaximumWidth(form_field_w)
     w.cv_mode_combo.setObjectName("cvMethodCombo")
+    w.cv_mode_combo.setMinimumWidth(250)
+    w.cv_mode_combo.setMaximumWidth(300)
     w.cv_spin = NoWheelSpinBox(); w.cv_spin.setMinimum(2); w.cv_spin.setValue(5)
+    w.cv_spin.setObjectName("cvFoldsSpin")
     try:
         w.cv_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
     except Exception:
         pass
-    w.cv_spin.setMinimumWidth(form_field_w)
-    w.cv_spin.setMaximumWidth(form_field_w)
+    w.cv_spin.setMinimumWidth(80)
+    w.cv_spin.setMaximumWidth(80)
     w.cv_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
     w.cv_spin.setToolTip("Folds value is changed by arrows or keyboard. Mouse wheel is disabled.")
     w.cv_spin.setObjectName("cvFoldsSpin")
@@ -496,22 +495,32 @@ def build_layout():
     
     config_card_layout.addSpacing(16)
     
-    vars_row = QHBoxLayout()
-    vars_row.setSpacing(12)
-    vars_row.addWidget(w.vars_button)
-    vars_row.addWidget(w.studio_btn)
-    vars_row.addStretch()
-    
-    config_card_layout.addLayout(vars_row)
-    
-    config_card_layout.addSpacing(12)
-    
     # Variables card
     w.variables_card = QFrame()
     w.variables_card.setObjectName("summaryCard")
     variables_layout = QVBoxLayout(w.variables_card)
     variables_layout.setContentsMargins(16, 16, 16, 16)
     variables_layout.setSpacing(10)
+
+    vars_action_row = QHBoxLayout()
+    vars_action_row.setContentsMargins(0, 0, 0, 0)
+    vars_action_row.setSpacing(12)
+    variables_layout.addLayout(vars_action_row)
+
+    w.vars_blocked_hint = QLabel(
+        tr(
+            "controls.variables.disabled_hint",
+            default="Please load a dataset in Step 1 to select variables.",
+        )
+    )
+    w.vars_blocked_hint.setObjectName("hintLabel")
+    w.vars_blocked_hint.setWordWrap(True)
+
+    vars_action_row.addWidget(w.vars_button)
+    vars_action_row.addWidget(w.vars_blocked_hint)
+    vars_action_row.addStretch(1)
+    vars_action_row.addWidget(w.studio_btn)
+
     variables_layout.addWidget(w.selection_label)
 
     fe_row = QHBoxLayout()
@@ -542,8 +551,21 @@ def build_layout():
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
     except Exception:
         pass
-    form.addRow(QLabel("Method:"), w.cv_mode_combo)
-    form.addRow(QLabel("Number of folds:"), w.cv_spin)
+    try:
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    except Exception:
+        pass
+
+    method_label = QLabel("Method:")
+    method_label.setMinimumWidth(120)
+    method_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+    folds_label = QLabel("Number of folds:")
+    folds_label.setMinimumWidth(120)
+    folds_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+    form.addRow(method_label, w.cv_mode_combo)
+    form.addRow(folds_label, w.cv_spin)
     validation_layout.addLayout(form)
     validation_layout.addStretch(1)
     config_card_layout.addWidget(w.validation_card)
