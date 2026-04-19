@@ -1,9 +1,9 @@
 import os
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
     QComboBox, QSpinBox, QCheckBox, QFrame, QScrollArea, QWidget, QMessageBox, QApplication
 )
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 from interface.widgets.apple_helpers import create_apple_settings_row
 from utils.localization import tr
 
@@ -316,7 +316,7 @@ class FeatureEngineeringStudioDialog(QDialog):
                 "Do you still want to generate the manipulated static dataset anyway?"
             )
             # Actually, QMessageBox is fine
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             reply = QMessageBox.warning(self, "Data Leakage Warning", warn_msg, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
             if reply != QMessageBox.StandardButton.Yes:
                 return

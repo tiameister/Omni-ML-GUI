@@ -6,7 +6,7 @@ import time
 import json
 import re
 from typing import TYPE_CHECKING
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QFileDialog,
@@ -20,10 +20,10 @@ from PyQt6.QtWidgets import (
     QLabel,
     QStyle,
 )
-from PyQt6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction
-from PyQt6.QtCore import Qt, QUrl, QSettings, QCoreApplication, QTimer
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
+from PySide6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction
+from PySide6.QtCore import Qt, QUrl, QSettings, QCoreApplication, QTimer
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QThread, Signal, QObject
 
 from interface.widgets.startup import StartupDialog
 from interface.logic.theme import theme_manager
@@ -79,11 +79,11 @@ class _TrainWorker(QObject):
     Worker class for running model training in a background thread.
     Handles progress, error, and result signals for the training process.
     """
-    finished = pyqtSignal(object, object, object, object, object, float)
-    error = pyqtSignal(str)
-    progress = pyqtSignal(int, int)
-    plot_progress = pyqtSignal(int, int)
-    log = pyqtSignal(str)
+    finished = Signal(object, object, object, object, object, float)
+    error = Signal(str)
+    progress = Signal(int, int)
+    plot_progress = Signal(int, int)
+    log = Signal(str)
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ class _TrainWorker(QObject):
 
 
 class _DatasetLoadWorker(QObject):
-    finished = pyqtSignal(object, object, object)  # returns (df, error_msg, path)
+    finished = Signal(object, object, object)  # returns (df, error_msg, path)
 
     def __init__(self, load_callable, path):
         super().__init__()
@@ -290,7 +290,7 @@ class MLTrainerApp(QMainWindow):
         self._change_theme(saved_theme)
 
     def _change_theme(self, theme_name: str):
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         theme_manager.load_theme(QApplication.instance(), theme_name)
         self._sync_theme_actions()
 
@@ -598,7 +598,7 @@ class MLTrainerApp(QMainWindow):
     def _assemble_ui(self):
         central = self.controls
         # Build a vertical container so header sits on top, content below
-        from PyQt6.QtWidgets import QWidget, QVBoxLayout
+        from PySide6.QtWidgets import QWidget, QVBoxLayout
         container = QWidget()
         container.setObjectName("appCanvas")
         vbox = QVBoxLayout(container)
@@ -832,7 +832,7 @@ class MLTrainerApp(QMainWindow):
 
 
         self.menu_settings_theme = self.menu_settings.addMenu("")
-        from PyQt6.QtGui import QActionGroup
+        from PySide6.QtGui import QActionGroup
         self.theme_action_group = QActionGroup(self)
         self.theme_action_group.setExclusive(True)
 
@@ -3430,7 +3430,7 @@ class MLTrainerApp(QMainWindow):
 
     def _refresh_plot_check_states_from_settings(self):
         """Sync the sidebar plot checkboxes with persisted QSettings, in case they were changed in the dialog."""
-        from PyQt6.QtCore import QSettings
+        from PySide6.QtCore import QSettings
         settings = QSettings()
         script_labels = set(get_optional_script_label_map().keys())
         legacy_titles = {
@@ -4345,7 +4345,7 @@ class MLTrainerApp(QMainWindow):
 
             if dlg.export_requested and self.state.dataset_path:
                 from features.feature_engineering import generate_static_fe_dataset
-                from PyQt6.QtWidgets import QMessageBox
+                from PySide6.QtWidgets import QMessageBox
                 import pandas as pd
                 import os
                 
@@ -4472,7 +4472,7 @@ def run_app():
         pass
 
     # Typography: prefer Inter (if installed), otherwise fall back to system fonts.
-    from PyQt6.QtGui import QFont, QFontDatabase
+    from PySide6.QtGui import QFont, QFontDatabase
     try:
         if "Inter" in QFontDatabase.families():
             app.setFont(QFont("Inter", 10))

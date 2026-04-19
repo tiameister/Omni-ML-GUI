@@ -7,7 +7,7 @@ pip install -r requirements.txt
 
 **A No-Code Machine Learning & XAI GUI for Students and Researchers**
 
-TIA Machine Learning Studio is an accessible, end-to-end desktop application designed to help students, researchers, and data enthusiasts run rigorous machine learning experiments without needing to write complex code. Built with PyQt6 and powered by Scikit-Learn, this tool automates data processing, model training, cross-validation, and Explainable AI (XAI) extraction, so you can focus on your research instead of debugging pipelines.
+TIA Machine Learning Studio is an accessible, end-to-end desktop application designed to help students, researchers, and data enthusiasts run rigorous machine learning experiments without needing to write complex code. Built with PySide6 and powered by Scikit-Learn, this tool automates data processing, model training, cross-validation, and Explainable AI (XAI) extraction, so you can focus on your research instead of debugging pipelines.
 
 ## Why use this tool?
 

@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Akar"
+  given-names: "Taha Ilter"
+  email: "taha.ilter.akar@fau.de"
+  affiliation: "Friedrich-Alexander-Universität Erlangen-Nürnberg (FAU)"
+title: "Omni-ML-GUI: A Comprehensive GUI for Machine Learning in Python"
+version: 1.0.0
+doi: "BURAYA_ZENODO_DOI_GELECEK"
+date-released: 2026-04-19
+url: "https://github.com/tiameister/Omni-ML-GUI"
+abstract: "Omni-ML-GUI is a comprehensive graphical user interface designed to facilitate machine learning tasks in Python. It provides an intuitive platform for data preprocessing, model training, evaluation, and deployment, making it accessible for both beginners and experienced practitioners. The software integrates various machine learning libraries and tools, allowing users to easily navigate through the entire machine learning workflow without the need for extensive coding."
+keywords:
+- "Machine Learning"
+- "Graphical User Interface"
+- "Python"
+- "Data Preprocessing"
+- "Model Training"
+- "Model Evaluation"
+- "Model Deployment"
+license: "MIT"
+

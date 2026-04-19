@@ -1,5 +1,5 @@
 from interface.widgets.apple_helpers import create_apple_settings_row
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication,
     QStyle,
     QTableView,
@@ -8,8 +8,8 @@ from PyQt6.QtWidgets import (
     QTabWidget, QScrollArea, QTableWidget, QFrame, QGridLayout, QListWidget, QAbstractItemView, QSizePolicy, QAbstractSpinBox, QFormLayout
 )
 from interface.widgets.checkboxes import create_model_checkboxes, create_plot_checkboxes
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont, QFontDatabase
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QFont, QFontDatabase
 from utils.localization import tr
 
 
@@ -1056,7 +1056,7 @@ def build_layout():
     w.jobs_tab = jobs_tab
     right_layout.addWidget(results_tab)
     
-    from PyQt6.QtWidgets import QDialog
+    from PySide6.QtWidgets import QDialog
     w.dev_console_dialog = QDialog(w)
     w.dev_console_dialog.setWindowTitle(tr("controls.dialogs.dev_console", default="Developer & Activity Console"))
     w.dev_console_dialog.resize(800, 600)

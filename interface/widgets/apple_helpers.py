@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QLabel
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QLabel
+from PySide6.QtCore import Qt
 
 def create_apple_settings_row(right_widget, title_text="", subtitle_text="", show_bottom_line=True):
     container = QFrame()

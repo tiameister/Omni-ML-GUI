@@ -1,9 +1,9 @@
 import os
 import logging
 import sys
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QPalette
-from PyQt6.QtCore import QSettings
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPalette
+from PySide6.QtCore import QSettings
 
 LOGGER = logging.getLogger(__name__)
 

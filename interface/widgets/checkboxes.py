@@ -1,7 +1,7 @@
 from config import DO_SHAP
 from functools import lru_cache
 import os
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QButtonGroup,
     QGroupBox,
     QVBoxLayout,
@@ -16,8 +16,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QSizePolicy,
 )
-from PyQt6.QtCore import QSettings, Qt, QTimer
-from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 
 
 LEGACY_PAGE_TITLES = {

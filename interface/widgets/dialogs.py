@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QHBoxLayout, QPushButton,
     QComboBox, QScrollArea, QWidget, QCheckBox, QDialogButtonBox, QLineEdit,
@@ -6,9 +6,9 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QGridLayout, QFrame, QListWidget, QListWidgetItem, QFileDialog,
     QTabWidget, QTextEdit
 )
-from PyQt6.QtCore import Qt, QSettings, QTimer
-from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import QMessageBox
+from PySide6.QtCore import Qt, QSettings, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import QMessageBox
 import json
 import os
 import re
@@ -783,7 +783,7 @@ class ShapSettingsDialog(QDialog):
         info_btn = QPushButton()
         info_btn.setObjectName("shapInfoButton")
         try:
-            from PyQt6.QtWidgets import QStyle
+            from PySide6.QtWidgets import QStyle
             info_btn.setIcon(info_btn.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation))
         except Exception:
             info_btn.setText("ⓘ")
@@ -1042,7 +1042,7 @@ class AboutDialog(QDialog):
         
         title = QLabel(tr("dialogs.about.app_title", default="Machine Learning Trainer"))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        from PyQt6.QtGui import QFont
+        from PySide6.QtGui import QFont
         title_font = QFont()
         title_font.setPointSize(18)
         title_font.setWeight(QFont.Weight.Bold)
@@ -1100,7 +1100,7 @@ class AboutDialog(QDialog):
             <li><b>Scikit-Learn</b> (BSD 3-Clause)</li>
             <li><b>Matplotlib</b> (PSF License)</li>
             <li><b>Seaborn</b> (BSD 3-Clause)</li>
-            <li><b>PyQt6</b> (GPL v3)</li>
+            <li><b>PySide6</b> (LGPL)</li>
             <li><b>SHAP</b> (MIT License)</li>
             <li><b>Statsmodels</b> (BSD 3-Clause)</li>
             <li><b>XGBoost</b> (Apache License 2.0)</li>

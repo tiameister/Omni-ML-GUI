@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QPushButton
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QPushButton
+from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt
 import os
 
 from utils.logger import get_logger

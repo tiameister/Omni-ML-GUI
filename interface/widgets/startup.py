@@ -1,10 +1,10 @@
 import os
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFrame, QMessageBox, QCheckBox,
     QComboBox
 )
-from PyQt6.QtGui import QPixmap, QFont
-from PyQt6.QtCore import Qt, QSettings
+from PySide6.QtGui import QPixmap, QFont
+from PySide6.QtCore import Qt, QSettings
 from utils.localization import i18n, tr
 from utils.logger import get_logger
 
@@ -145,8 +145,8 @@ class StartupDialog(QDialog):
 
         def _guide():
             try:
-                from PyQt6.QtCore import QUrl
-                from PyQt6.QtGui import QDesktopServices
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
                 proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
                 pdf_path = os.path.join(proj_root, 'info.pdf')
                 if os.path.exists(pdf_path):
