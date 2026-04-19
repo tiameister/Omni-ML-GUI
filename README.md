@@ -83,6 +83,27 @@ If you prefer working without a GUI or want to run batch operations on a server,
 python main.py
 ```
 
+
+## Citation
+If you use this tool in your research, please cite it as follows:
+
+**APA:**  
+Akar, T. I. (2026). Omni-ML-GUI (v1.0.1). Zenodo. https://doi.org/10.5281/zenodo.19649882
+
+**BibTeX:**
+```bibtex
+@software{Akar_Omni_ML_GUI_2026,
+	author = {Akar, Taha Ilter},
+	title = {{Omni-ML-GUI: A Comprehensive GUI for Machine Learning and XAI Research}},
+	month = {4},
+	year = {2026},
+	publisher = {Zenodo},
+	version = {1.0.1},
+	doi = {10.5281/zenodo.19649882},
+	url = {https://github.com/tiameister/Omni-ML-GUI}
+}
+```
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details. Contributions, bug reports, and feature requests are always welcome!
