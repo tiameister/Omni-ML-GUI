@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QStyle,
 )
-from PyQt6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction, QActionGroup
+from PyQt6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction
 from PyQt6.QtCore import Qt, QUrl, QSettings, QCoreApplication, QTimer
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtCore import QThread, pyqtSignal, QObject
@@ -61,7 +61,11 @@ _PANDAS = None
 
 
 def _pd():
-    """Lazy-import pandas to keep GUI startup fast."""
+    """
+    Lazy-import pandas to keep GUI startup fast.
+    Returns:
+        pandas module
+    """
     global _PANDAS
     if _PANDAS is None:
         import pandas as _pandas
@@ -71,6 +75,10 @@ def _pd():
 
 
 class _TrainWorker(QObject):
+    """
+    Worker class for running model training in a background thread.
+    Handles progress, error, and result signals for the training process.
+    """
     finished = pyqtSignal(object, object, object, object, object, float)
     error = pyqtSignal(str)
     progress = pyqtSignal(int, int)
@@ -151,6 +159,10 @@ class _DatasetLoadWorker(QObject):
 
 
 class MLTrainerApp(QMainWindow):
+    """
+    Main application window for the ML Trainer GUI.
+    Manages UI state, user actions, session recovery, and job execution.
+    """
     def __init__(self):
         super().__init__()
         self._snapshot_guard = True
@@ -3924,7 +3936,6 @@ class MLTrainerApp(QMainWindow):
 
         # Create worker and thread
         self._cancelled = False
-        app = self
 
         # Build a stable per-run output id (so outputs don't scatter into versioned model folders).
         try:

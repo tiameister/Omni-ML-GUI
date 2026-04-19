@@ -1,3 +1,7 @@
+"""
+Feature engineering utilities and transformers for MLTrainer.
+Includes custom scikit-learn compatible transformers and helpers.
+"""
 import os
 import numpy as np
 import pandas as pd

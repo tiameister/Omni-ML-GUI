@@ -158,7 +158,9 @@ def apply_translations(w):
                 total=len(getattr(w, "model_checks", {}) or {}),
             )
         )
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to set model_summary_label: {e}")
         w.model_summary_label.setText(tr("status.no_model_selected", default="No model selected yet."))
     w.progress_phase_label.setText(tr("status.idle", default="Idle"))
     w.progress_timing_label.setText(tr("status.elapsed_eta_default", default="Elapsed: -- | ETA: --"))
@@ -166,8 +168,9 @@ def apply_translations(w):
     try:
         w.status_label.setText("")
         w.status_label.setVisible(False)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.debug(f"Failed to set status_label: {e}")
     w.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
 
     if hasattr(w, "feedback_event_label"):
@@ -306,8 +309,9 @@ def build_layout():
     try:
         w.preview_button.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView))
         w.preview_button.setIconSize(QSize(16, 16))
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.debug(f"Failed to set preview_button icon: {e}")
 
     w.info_button = QPushButton("About / Guide")
     w.info_button.setObjectName("ghostButton")
@@ -434,8 +438,9 @@ def build_layout():
     try:
         pix = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon).pixmap(48, 48)
         w.data_empty_icon.setPixmap(pix)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.debug(f"Failed to set data_empty_icon pixmap: {e}")
 
     w.data_empty_title = QLabel("No dataset loaded")
     w.data_empty_title.setObjectName("emptyStateTitle")
@@ -616,8 +621,9 @@ def build_layout():
     w.model_selected_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
     try:
         w.model_selected_list.setSpacing(2)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.debug(f"Failed to set model_selected_list spacing: {e}")
 
     w.model_sidebar = QFrame()
     w.model_sidebar.setObjectName("modelSidebar")

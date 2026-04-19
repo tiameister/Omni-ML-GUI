@@ -1,3 +1,7 @@
+"""
+Modular plotting utilities for MLTrainer evaluation.
+Wraps plotting functions to ensure matplotlib figures are closed after use.
+"""
 import functools
 import matplotlib.pyplot as plt
 

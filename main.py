@@ -1,3 +1,6 @@
+"""
+Main script for MLTrainer: loads data, preprocesses, trains models, evaluates, and saves results.
+"""
 import os
 import json
 import pandas as pd

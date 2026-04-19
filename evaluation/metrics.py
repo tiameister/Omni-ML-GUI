@@ -1,3 +1,7 @@
+"""
+Metrics and model evaluation utilities for MLTrainer.
+Includes functions for exporting results, calculating metrics, and saving outputs.
+"""
 import os
 import pandas as pd
 from typing import List

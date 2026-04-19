@@ -1,3 +1,7 @@
+"""
+Preprocessing pipeline construction for MLTrainer.
+Defines build_preprocessor and helpers for column transformations.
+"""
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer

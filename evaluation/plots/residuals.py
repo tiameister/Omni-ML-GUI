@@ -1,3 +1,7 @@
+"""
+Residual analysis and diagnostic plotting utilities for MLTrainer.
+Includes functions for saving residual plots and distributions.
+"""
 import os
 import numpy as np
 import matplotlib

@@ -1,3 +1,7 @@
+"""
+Descriptions for supported machine learning models used in the application.
+Each key is a model name, and the value is a human-readable description.
+"""
 MODEL_DESCRIPTIONS = {
     "LinearRegression": "Linear Regression: Fits a straight line to minimize squared error. Fast, interpretable, but can't model non-linearities.",
     "RidgeCV": "Ridge Regression (CV): Linear model with L2 regularization. Reduces overfitting, especially with many features.",

@@ -21,6 +21,14 @@ from utils.logger import get_logger
 
 # define rmse natively
 def rmse(y_true, y_pred):
+    """
+    Compute root mean squared error (RMSE) between true and predicted values.
+    Args:
+        y_true: Ground truth values.
+        y_pred: Predicted values.
+    Returns:
+        float: RMSE value.
+    """
     return root_mean_squared_error(y_true, y_pred)
 
 import numpy as np
@@ -31,6 +39,13 @@ LOGGER = get_logger(__name__)
 
 
 def _safe_call(cb, *args, context: str):
+    """
+    Safely call a callback, logging any exceptions as non-fatal.
+    Args:
+        cb: Callback function.
+        *args: Arguments to pass to the callback.
+        context: String describing the callback context for logging.
+    """
     if not callable(cb):
         return
     try:
@@ -50,6 +65,22 @@ def train_and_evaluate(
     X, y, preprocessor, model_names=None, progress_callback=None,
     cv_mode='kfold', cv_folds=5, log_callback=None, model_status_callback=None
 ):
+    """
+    Train and evaluate multiple regression models with cross-validation.
+    Args:
+        X: Feature matrix.
+        y: Target vector.
+        preprocessor: Preprocessing pipeline or transformer.
+        model_names: List of model names to train (optional).
+        progress_callback: Function to report progress (optional).
+        cv_mode: Cross-validation mode ('kfold', etc.).
+        cv_folds: Number of CV folds.
+        log_callback: Function to log messages (optional).
+        model_status_callback: Function to report model status (optional).
+    Returns:
+        metrics_df: DataFrame of model metrics.
+        fitted_models: Dictionary of fitted model objects.
+    """
     model_names = get_selected_models(model_names)
 
     all_models = {
