@@ -3,6 +3,10 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
 import os
 
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
+
 def create_header(title, subtitle=None):
     container = QWidget()
     container.setObjectName("headerWidget")
@@ -20,12 +24,12 @@ def create_header(title, subtitle=None):
         if os.path.exists(usak_path):
             pm = QPixmap(usak_path)
             if not pm.isNull():
-                pass # left_logo.setPixmap(pm)
+                left_logo.setPixmap(pm)
                 left_logo.setScaledContents(True)
                 left_logo.setFixedHeight(34)
                 left_logo.setFixedWidth(int(34 * (pm.width() / max(1, pm.height()))))
     except Exception:
-        pass
+        LOGGER.exception("Header logo load failed (left)")
 
     right_logo = QLabel(container)
     try:
@@ -34,12 +38,12 @@ def create_header(title, subtitle=None):
         if os.path.exists(fau_path):
             pm2 = QPixmap(fau_path)
             if not pm2.isNull():
-                pass # right_logo.setPixmap(pm2)
+                right_logo.setPixmap(pm2)
                 right_logo.setScaledContents(True)
                 right_logo.setFixedHeight(34)
                 right_logo.setFixedWidth(int(34 * (pm2.width() / max(1, pm2.height()))))
     except Exception:
-        pass
+        LOGGER.exception("Header logo load failed (right)")
 
     v_main.addWidget(left_logo, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -70,7 +74,6 @@ def create_header(title, subtitle=None):
     actions_layout.addWidget(info_btn)
 
     v_main.addLayout(actions_layout)
-    v_main.addStretch(1)
     v_main.addWidget(right_logo, 0, Qt.AlignmentFlag.AlignVCenter)
 
     container.globalInfoButton = info_btn

@@ -15,11 +15,16 @@ import glob
 import json
 import math
 import os
+from utils.paths import EVALUATION_DIR
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -57,7 +62,7 @@ def resolve_analysis_root(run_root: str) -> str:
     env_root = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
     if env_root:
         return env_root
-    return os.path.join(run_root, "1_Overall_Evaluation")
+    return os.path.join(run_root, EVALUATION_DIR)
 
 
 def linear_calibration(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
@@ -106,7 +111,7 @@ def _strip_training_prefix(name: str) -> str:
 
 
 def find_prediction_files(run_root: str) -> List[Tuple[str, str]]:
-    pattern = os.path.join(run_root, "models", "*", "1_Overall_Evaluation", "*_predictions_vs_actual.xlsx")
+    pattern = os.path.join(run_root, "models", "*", EVALUATION_DIR, "*_predictions_vs_actual.xlsx")
     by_model: Dict[str, Tuple[str, str]] = {}
     for path in glob.glob(pattern):
         fname = os.path.basename(path)
@@ -122,7 +127,7 @@ def find_prediction_files(run_root: str) -> List[Tuple[str, str]]:
 
 
 def load_metrics_df(run_root: str) -> pd.DataFrame | None:
-    metrics_path = os.path.join(run_root, "1_Overall_Evaluation", "metrics.xlsx")
+    metrics_path = os.path.join(run_root, EVALUATION_DIR, "metrics.xlsx")
     if not os.path.exists(metrics_path):
         return None
     try:
@@ -350,8 +355,8 @@ def resolve_best_model(run_root: str, metrics_df: pd.DataFrame | None) -> str:
             best_model = str(manifest.get("best_model", "")).strip()
             if best_model:
                 return best_model
-        except Exception:
-            pass
+        except Exception as e:
+            LOGGER.exception("Failed reading run manifest: %s", manifest_path)
     if metrics_df is not None and not metrics_df.empty and "model" in metrics_df.columns:
         return str(metrics_df.iloc[0].get("model") or "").strip()
     return ""
@@ -460,8 +465,8 @@ def cumulative_importance_workflow(run_root: str, analysis_root: str) -> None:
                 xytext=(n80 + 1, min(0.95, y80 + 0.05)),
                 arrowprops=dict(arrowstyle="->", color="red"),
             )
-    except Exception:
-        pass
+    except Exception as e:
+        LOGGER.exception("Failed annotating cumulative importance plot")
     base = os.path.join(fig_dir, "cumulative_importance")
     fig.savefig(base + ".png", dpi=300, bbox_inches="tight")
     fig.savefig(base + ".pdf", bbox_inches="tight")

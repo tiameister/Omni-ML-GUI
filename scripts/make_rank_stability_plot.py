@@ -23,7 +23,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-import seaborn as sns
 
 ROOT = Path(__file__).resolve().parents[1]
 XAI_DIR = ROOT / 'output' / 'xai_consistency'

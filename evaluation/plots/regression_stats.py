@@ -9,7 +9,12 @@ try:
     from config import FEATURE_NAME_MAP
 except Exception:
     FEATURE_NAME_MAP = {}
-from utils.plotting_helpers import CATEGORY_LABELS as _CAT_LABELS, display_name as _disp, _norm as _norm  # type: ignore
+    
+try:
+    from utils.humanize import CATEGORY_LABELS as _CAT_LABELS, display_name as _disp, _norm as _norm
+except ImportError:
+    from utils.plotting_helpers import display_name as _disp, _norm as _norm  # type: ignore
+    _CAT_LABELS = {}
 
 try:
     from config import SAVE_PDF  # Optional: whether to also save PDF plots

@@ -1,5 +1,6 @@
 import os
 import logging
+import sys
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QPalette
 from PyQt6.QtCore import QSettings
@@ -42,8 +43,12 @@ class ThemeManager:
             
         base_dir = os.path.dirname(os.path.dirname(__file__))
         
-        # 1. Native Fusion Palette ayarları (özellikle QMessageBox ve menüler MacOS ile tam uyum sağlasın diye)
-        app.setStyle("Fusion")
+        # Keep macOS native look; use Fusion on other OSes for consistency.
+        if sys.platform != "darwin":
+            try:
+                app.setStyle("Fusion")
+            except Exception:
+                pass
         
         # 2. QSS yükleme
         qss_filename = "dark_style.qss" if is_dark else "style.qss"
@@ -56,15 +61,15 @@ class ThemeManager:
                 # Dinamik token haritası kullanımı
                 if is_dark:
                     token_map = {
-                        "{{SURFACE_BG_TOP}}": "#1E1E1E",
-                        "{{SURFACE_BG_MID}}": "#202020",
-                        "{{SURFACE_BG_END}}": "#252526",
-                        "{{BORDER_SOFT}}": "#3A3A3D",
-                        "{{BORDER_PANEL}}": "#3A3A3D",
+                        "{{SURFACE_BG_TOP}}": "#1c1c1e",
+                        "{{SURFACE_BG_MID}}": "#2c2c2e",
+                        "{{SURFACE_BG_END}}": "#3a3a3c",
+                        "{{BORDER_SOFT}}": "rgba(255, 255, 255, 0.08)",
+                        "{{BORDER_PANEL}}": "rgba(255, 255, 255, 0.12)",
                         "{{COLOR_PRIMARY}}": "#0A84FF",
                         "{{COLOR_ACCENT}}": "#5E5CE6",
                         "{{TEXT_TITLE}}": "#FFFFFF",
-                        "{{TEXT_SUBTITLE}}": "#EAEB5E",
+                        "{{TEXT_SUBTITLE}}": "#EBEBF5",
                         "{{TEXT_ACCENT}}": "#0A84FF",
                         "{{RADIUS_PANEL}}": "14",
                         "{{RADIUS_CARD}}": "10",
@@ -72,16 +77,16 @@ class ThemeManager:
                     }
                 else:
                     token_map = {
-                        "{{SURFACE_BG_TOP}}": "#EEF3F8",
-                        "{{SURFACE_BG_MID}}": "#E9F0F7",
-                        "{{SURFACE_BG_END}}": "#DDE8F2",
-                        "{{BORDER_SOFT}}": "#C8D8EA",
-                        "{{BORDER_PANEL}}": "#D4DFEC",
-                        "{{COLOR_PRIMARY}}": "#0068B3",
-                        "{{COLOR_ACCENT}}": "#3D8ED1",
-                        "{{TEXT_TITLE}}": "#102333",
-                        "{{TEXT_SUBTITLE}}": "#496279",
-                        "{{TEXT_ACCENT}}": "#1F4D73",
+                        "{{SURFACE_BG_TOP}}": "#F2F2F7",
+                        "{{SURFACE_BG_MID}}": "#FFFFFF",
+                        "{{SURFACE_BG_END}}": "#E5E5EA",
+                        "{{BORDER_SOFT}}": "rgba(0, 0, 0, 0.08)",
+                        "{{BORDER_PANEL}}": "rgba(0, 0, 0, 0.12)",
+                        "{{COLOR_PRIMARY}}": "#007AFF",
+                        "{{COLOR_ACCENT}}": "#5856D6",
+                        "{{TEXT_TITLE}}": "#000000",
+                        "{{TEXT_SUBTITLE}}": "#3C3C43",
+                        "{{TEXT_ACCENT}}": "#007AFF",
                         "{{RADIUS_PANEL}}": "14",
                         "{{RADIUS_CARD}}": "10",
                         "{{RADIUS_WORKFLOW}}": "12",
@@ -93,6 +98,6 @@ class ThemeManager:
                 app.setStyleSheet(qss_text)
                 
         except Exception as e:
-            LOGGER.error(f"Tema {theme_name} yüklenirken hata: {e}")
+            LOGGER.error(f"Tema {theme_name} yüklenirken hata: {e}", exc_info=True)
 
 theme_manager = ThemeManager()

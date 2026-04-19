@@ -1,10 +1,14 @@
+"""
+Metrics and model evaluation utilities for MLTrainer.
+Includes functions for exporting results, calculating metrics, and saving outputs.
+"""
 import os
 import pandas as pd
 from typing import List
 from sklearn.pipeline import Pipeline
 from sklearn.inspection import permutation_importance
 
-from utils.helpers import save_bar
+from utils.plotting_helpers import save_bar
 from utils.logger import get_logger
 import numpy as np
 
@@ -56,13 +60,13 @@ def save_model_metrics(outdir: str, metrics_df: pd.DataFrame, filename_prefix: s
             best_r2 = float(publication_view["R2_CV"].max())
             publication_view["delta_R2_vs_best"] = publication_view["R2_CV"].astype(float) - best_r2
         except Exception:
-            pass
+            LOGGER.exception("Failed to compute delta_R2_vs_best")
     if "RMSE_CV" in publication_view.columns:
         try:
             best_rmse = float(publication_view["RMSE_CV"].min())
             publication_view["delta_RMSE_vs_best"] = publication_view["RMSE_CV"].astype(float) - best_rmse
         except Exception:
-            pass
+            LOGGER.exception("Failed to compute delta_RMSE_vs_best")
 
     preferred_cols = [
         "rank_by_R2",
@@ -148,6 +152,18 @@ def get_feature_names_from_pipe(pipe: Pipeline, num_cols: List[str] | None = Non
     if ct is None:
         # No preprocessor; assume original columns are final names
         return list(getattr(pipe, "feature_names_in_", []))
+
+    # Preferred: let sklearn compute the final output feature names (includes
+    # feature engineering expansions, OHE names, etc.).
+    try:
+        if hasattr(ct, "get_feature_names_out"):
+            names_out = ct.get_feature_names_out()
+            if names_out is not None:
+                names_list = [str(n) for n in list(names_out)]
+                if names_list:
+                    return names_list
+    except Exception as exc:
+        LOGGER.debug("ct.get_feature_names_out() failed; falling back: %s", exc)
 
     # Derive num/cat columns from ColumnTransformer if not provided
     derived_num: List[str] = []

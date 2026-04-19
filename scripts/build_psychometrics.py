@@ -24,6 +24,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
+
 ITEM_COLS = [f"m{i}" for i in range(1,10)]  # m1..m9
 DATA_CANDIDATES = [Path("dataset/data_cleaned.csv"), Path("dataset/data.csv")]
 OUT_TABLE = Path("supplements/tables")
@@ -47,7 +51,7 @@ def _read_dataset() -> pd.DataFrame:
                     if set(ITEM_COLS) & set(df.columns):
                         return df
                 except Exception:
-                    continue
+                    LOGGER.exception("Dataset read failed (sep=%s) for %s", sep, p)
             # fallback to default
             return pd.read_csv(p)
     raise FileNotFoundError("No dataset found (data_cleaned.csv or data.csv)")
@@ -214,7 +218,6 @@ def main():
         plt.close()
 
     # Parallel analysis (always via PCA fallback method for speed)
-    two_factor_done = False
     try:
         pa_mean = parallel_analysis(dfi)
         pa_df = pd.DataFrame({'component': range(1, len(pa_mean)+1), 'pa_mean_eigen': pa_mean})
@@ -246,9 +249,8 @@ def main():
                 else:
                     l2 = pca_loadings(dfi, 2)
                 l2.reset_index(names='item').to_csv(OUT_TABLE / 'psychometrics_two_factor_loadings.csv', index=False)
-                two_factor_done = True
     except Exception:
-        pass
+        LOGGER.exception("Psychometrics pipeline failed")
 
     print(f"[OK] Items: {items}  N={n_obs}  Alpha={alpha:.3f}")
     if kmo_val is not None:

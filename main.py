@@ -1,7 +1,9 @@
+"""
+Main script for MLTrainer: loads data, preprocesses, trains models, evaluates, and saves results.
+"""
 import os
 import json
 import pandas as pd
-import numpy as np
 
 from data.loader import read_csv_safely, detect_cols
 from features.preprocess import build_preprocessor
@@ -11,7 +13,7 @@ from evaluation.explain import explain_with_shap, generate_pdp
 from evaluation.plots.curves import plot_learning_curve, plot_predictions_vs_actual
 from config.columns import resolve_column_groups
 
-from utils.helpers import ensure_outdir
+from utils.paths import ensure_outdir
 
 from config import RSTATE, PI_REPEATS, DO_SHAP, DATASET_PATH, get_output_folder
 from config import CV_MODE, CV_FOLDS, CV_REPEATS, NESTED_OUTER_FOLDS, NESTED_INNER_FOLDS

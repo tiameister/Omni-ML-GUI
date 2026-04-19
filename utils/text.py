@@ -17,16 +17,15 @@ def normalize_text(s: str) -> str:
     return txt
 
 
+
+_QUOTE_TRANS = str.maketrans({
+    "’": "'", "‘": "'", "‛": "'", "ʼ": "'", "ʹ": "'", "ʽ": "'", "ˈ": "'", "′": "'", "‵": "'", "＇": "'", "´": "'", "`": "'",
+    "“": '"', "”": '"', "‟": '"', "″": '"', "＂": '"',
+    "\uFFFD": "'",
+    "\u201A": "'",
+    "\u00A0": " ",
+    "\x91": "'", "\x92": "'", "\x93": '"', "\x94": '"',
+})
+
 def normalize_quotes_ascii(s: str) -> str:
-    txt = str(s)
-    replacements = {
-        "’": "'", "‘": "'", "‛": "'", "ʼ": "'", "ʹ": "'", "ʽ": "'", "ˈ": "'", "′": "'", "‵": "'", "＇": "'", "´": "'", "`": "'",
-        "“": '"', "”": '"', "‟": '"', "″": '"', "＂": '"',
-        "\uFFFD": "'",
-        "\u201A": "'",
-        "\u00A0": " ",
-        "\x91": "'", "\x92": "'", "\x93": '"', "\x94": '"',
-    }
-    for old, new in replacements.items():
-        txt = txt.replace(old, new)
-    return txt
+    return str(s).translate(_QUOTE_TRANS)

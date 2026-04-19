@@ -2,10 +2,22 @@ from config import DO_SHAP
 from functools import lru_cache
 import os
 from PyQt6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QCheckBox, QToolBox, QWidget, QHBoxLayout, QPushButton, QSizePolicy, QLineEdit,
-    QGridLayout
+    QButtonGroup,
+    QGroupBox,
+    QVBoxLayout,
+    QCheckBox,
+    QToolBox,
+    QWidget,
+    QHBoxLayout,
+    QPushButton,
+    QLineEdit,
+    QGridLayout,
+    QFrame,
+    QLabel,
+    QSizePolicy,
 )
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QSettings, Qt, QTimer
+from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 
 
 LEGACY_PAGE_TITLES = {
@@ -232,6 +244,38 @@ def create_model_checkboxes():
     filter_edit = QLineEdit()
     filter_edit.setPlaceholderText("Filter models...")
     filter_edit.setClearButtonEnabled(True)
+
+    # Add a leading magnifier icon inside the input.
+    try:
+        def _text_icon(text: str, *, size: int = 14, color: str = "#5B6C7B") -> QIcon:
+            dpr = 1.0
+            try:
+                dpr = float(filter_edit.devicePixelRatioF())
+            except Exception:
+                pass
+            pm = QPixmap(int(size * dpr), int(size * dpr))
+            pm.fill(Qt.GlobalColor.transparent)
+            pm.setDevicePixelRatio(dpr)
+
+            p = QPainter(pm)
+            try:
+                p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+            except Exception:
+                pass
+            f = QFont(filter_edit.font())
+            f.setPointSize(max(9, int(size * 0.9)))
+            p.setFont(f)
+            p.setPen(QColor(color))
+            p.drawText(pm.rect(), int(Qt.AlignmentFlag.AlignCenter), text)
+            p.end()
+            return QIcon(pm)
+
+        act = QAction(_text_icon("🔍"), "", filter_edit)
+        filter_edit.addAction(act, QLineEdit.ActionPosition.LeadingPosition)
+    except Exception:
+        pass
+
     header_row.addWidget(filter_edit)
     layout.addLayout(header_row)
 
@@ -246,6 +290,31 @@ def create_model_checkboxes():
     btn_robust = QPushButton("Robust")
     btn_full = QPushButton("Full")
     btn_clear = QPushButton("Clear")
+
+    chip_buttons = [btn_fast, btn_balanced, btn_linear, btn_ensemble, btn_robust, btn_full]
+    for b in chip_buttons:
+        b.setProperty("chip", True)
+        b.setCheckable(True)
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        try:
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        except Exception:
+            pass
+
+    btn_clear.setProperty("chip", True)
+    btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+    try:
+        btn_clear.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    except Exception:
+        pass
+
+    preset_group = QButtonGroup(group)
+    try:
+        preset_group.setExclusive(True)
+    except Exception:
+        pass
+    for b in chip_buttons:
+        preset_group.addButton(b)
     btn_fast.setMinimumWidth(62)
     btn_balanced.setMinimumWidth(80)
     btn_linear.setMinimumWidth(72)
@@ -285,19 +354,105 @@ def create_model_checkboxes():
     ]
     recommended = {"RidgeCV", "RandomForest", "HistGB"}
 
-    model_grid = QGridLayout()
-    model_grid.setHorizontalSpacing(6)
-    model_grid.setVerticalSpacing(2)
+    # Card grid (BigTech-style inline picker)
+    model_cards: dict[str, QFrame] = {}
+    meta = {
+        "LinearRegression": {"title": "Linear Regression", "tag": "Fast", "desc": "Baseline linear model"},
+        "RidgeCV": {"title": "Ridge (CV)", "tag": "Recommended", "desc": "Regularized linear model with CV"},
+        "RandomForest": {"title": "Random Forest", "tag": "Robust", "desc": "Non-linear ensemble (trees)"},
+        "HistGB": {"title": "Hist Gradient Boost", "tag": "Fast", "desc": "Efficient boosting (strong default)"},
+        "GradientBoostingRegressor": {"title": "Gradient Boosting", "tag": "Accurate", "desc": "Classic boosting regressor"},
+        "Lasso": {"title": "Lasso", "tag": "Sparse", "desc": "L1 regularization (feature selection)"},
+        "ElasticNet": {"title": "Elastic Net", "tag": "Balanced", "desc": "L1/L2 mix regularization"},
+        "SVR": {"title": "SVR", "tag": "Flexible", "desc": "Kernel regression (can be slower)"},
+        "KNeighborsRegressor": {"title": "KNN Regressor", "tag": "Simple", "desc": "Nearest-neighbors regression"},
+        "XGBoost": {"title": "XGBoost", "tag": "Boosted", "desc": "High-performance gradient boosting"},
+    }
 
+    grid = QGridLayout()
+    grid.setHorizontalSpacing(10)
+    grid.setVerticalSpacing(10)
+
+    cols = 2
     for idx, name in enumerate(model_order):
-        chk = QCheckBox(name)
-        chk.setToolTip(tooltips.get(name, name))
-        # Recommended defaults for a balanced first run.
-        chk.setChecked(name in recommended)
-        model_grid.addWidget(chk, idx, 0)
-        checks[name] = chk
-    model_grid.setColumnStretch(0, 1)
-    layout.addLayout(model_grid)
+        info = meta.get(name, {"title": name, "tag": "", "desc": ""})
+
+        card = QFrame()
+        card.setObjectName("modelCard")
+        card.setProperty("selected", name in recommended)
+        card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        v = QVBoxLayout(card)
+        v.setContentsMargins(16, 16, 16, 16)
+        v.setSpacing(6)
+
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(8)
+
+        title = QLabel(str(info.get("title", name)))
+        title.setObjectName("modelCardTitle")
+        title.setToolTip(tooltips.get(name, name))
+
+        tag = QLabel(str(info.get("tag", "")).strip())
+        tag.setObjectName("modelCardTag")
+        tag.setVisible(bool(tag.text()))
+
+        toggle = QPushButton("Select")
+        toggle.setCheckable(True)
+        toggle.setChecked(name in recommended)
+        toggle.setObjectName("modelToggle")
+        toggle.setToolTip(tooltips.get(name, name))
+
+        def _sync_toggle_text(state: bool, btn=toggle, fr=card):
+            btn.setText("Selected" if state else "Select")
+            fr.setProperty("selected", bool(state))
+            fr.style().unpolish(fr)
+            fr.style().polish(fr)
+
+        toggle.toggled.connect(_sync_toggle_text)
+        _sync_toggle_text(toggle.isChecked())
+
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+        title_row.addWidget(title)
+        title_row.addWidget(tag)
+        title_row.addStretch(1)
+
+        top.addLayout(title_row, 1)
+        top.addWidget(toggle, 0)
+        v.addLayout(top)
+
+        desc = QLabel(str(info.get("desc", "")).strip())
+        desc.setObjectName("modelCardDesc")
+        desc.setWordWrap(True)
+        desc.setVisible(bool(desc.text()))
+        v.addWidget(desc)
+
+        def _card_click(event, btn=toggle):
+            try:
+                btn.toggle()
+            except Exception:
+                pass
+            try:
+                event.accept()
+            except Exception:
+                pass
+
+        card.mousePressEvent = _card_click
+
+        model_cards[name] = card
+        checks[name] = toggle
+
+        r = idx // cols
+        c = idx % cols
+        grid.addWidget(card, r, c)
+
+    grid.setColumnStretch(0, 1)
+    grid.setColumnStretch(1, 1)
+    layout.addLayout(grid)
 
     # Wire bulk presets
     def set_all(state: bool):
@@ -306,13 +461,40 @@ def create_model_checkboxes():
 
     def apply_filter(text: str):
         t = (text or '').strip().lower()
-        for name, cb in checks.items():
-            cb.setVisible(t in name.lower() if t else True)
-    filter_edit.textChanged.connect(apply_filter)
+        for name, fr in model_cards.items():
+            fr.setVisible((t in name.lower()) if t else True)
+
+    # Debounce filter updates to keep typing responsive on large UIs.
+    _filter_timer = QTimer(group)
+    _filter_timer.setSingleShot(True)
+    _filter_timer.setInterval(120)
+
+    def _apply_filter_now():
+        apply_filter(filter_edit.text())
+
+    _filter_timer.timeout.connect(_apply_filter_now)
+    filter_edit.textChanged.connect(lambda _t: _filter_timer.start())
+    _apply_filter_now()
+    group._filter_timer = _filter_timer
 
     def apply_preset(names: set[str]):
         for name, cb in checks.items():
             cb.setChecked(name in names)
+
+    def _clear_preset_checks():
+        try:
+            preset_group.setExclusive(False)
+        except Exception:
+            pass
+        for b in chip_buttons:
+            try:
+                b.setChecked(False)
+            except Exception:
+                pass
+        try:
+            preset_group.setExclusive(True)
+        except Exception:
+            pass
 
     btn_fast.setToolTip("Quick baseline set for fastest iteration.")
     btn_balanced.setToolTip("Balanced speed/quality starter set.")
@@ -333,7 +515,19 @@ def create_model_checkboxes():
     btn_ensemble.clicked.connect(lambda: apply_preset(preset_ensemble))
     btn_robust.clicked.connect(lambda: apply_preset(preset_robust))
     btn_full.clicked.connect(lambda: apply_preset(preset_full))
-    btn_clear.clicked.connect(lambda: set_all(False))
+    btn_clear.clicked.connect(lambda: (set_all(False), _clear_preset_checks()))
+
+    # expose a few handles for inline UX
+    group.filter_edit = filter_edit
+    group.preset_buttons = {
+        "fast": btn_fast,
+        "balanced": btn_balanced,
+        "linear": btn_linear,
+        "ensemble": btn_ensemble,
+        "robust": btn_robust,
+        "full": btn_full,
+        "clear": btn_clear,
+    }
 
     return checks, group
 

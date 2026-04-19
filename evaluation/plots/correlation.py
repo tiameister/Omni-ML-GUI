@@ -30,7 +30,7 @@ def plot_correlation_matrix(model_name: str, X, y, outdir: str):
     try:
         # Combine features with target and compute numeric-only correlations
         df = X.copy()
-        target_col = 'target'
+        target_col = getattr(y, 'name', 'target') or 'target'
         if target_col in df.columns:
             base = 'target'
             suffix = 2

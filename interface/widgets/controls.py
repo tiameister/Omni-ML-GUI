@@ -1,12 +1,15 @@
+from interface.widgets.apple_helpers import create_apple_settings_row
 from PyQt6.QtWidgets import (
+    QApplication,
+    QStyle,
+    QTableView,
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QComboBox, QSpinBox, QCheckBox, QProgressBar, QTextEdit,
-    QTabWidget, QScrollArea, QTableWidget, QGroupBox, QFrame, QGridLayout, QListWidget,
-    QAbstractItemView, QListWidgetItem
+    QTabWidget, QScrollArea, QTableWidget, QFrame, QGridLayout, QListWidget, QAbstractItemView, QSizePolicy, QAbstractSpinBox, QFormLayout
 )
 from interface.widgets.checkboxes import create_model_checkboxes, create_plot_checkboxes
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QFont, QFontDatabase
 from utils.localization import tr
 
 
@@ -102,10 +105,11 @@ def apply_translations(w):
     w.model_hint_label.setText(
         tr("controls.workflow.step3_hint", default="Select which machine learning models you want to include in the evaluation phase.")
     )
-    w.open_models_panel_btn.setText(tr("controls.buttons.choose_models", default="Choose Models..."))
-    w.open_models_panel_btn.setToolTip(
-        tr("controls.workflow.step3_button_tip", default="Open the model selection popup.")
-    )
+    if hasattr(w, "open_models_panel_btn"):
+        w.open_models_panel_btn.setText(tr("controls.buttons.choose_models", default="Choose Models..."))
+        w.open_models_panel_btn.setToolTip(
+            tr("controls.workflow.step3_button_tip", default="Open the model selection popup.")
+        )
 
     w.run_hint_label.setText(
         tr("controls.workflow.step4_hint", default="Initialize the training pipeline. Live monitoring and runtime context will stream below.")
@@ -130,16 +134,43 @@ def apply_translations(w):
 
     # Added missing translated labels for initialization/language switch
     w.step1_title.setText(tr("controls.workflow.step1_title", default="Overview & Dataset"))
-    w.step2_title.setText(tr("controls.workflow.step2_title", default="Variables & Validation Setup"))
-    w.step3_title.setText(tr("controls.workflow.step3_title", default="Model Pool Setup"))
-    w.step4_title.setText(tr("controls.workflow.step4_title", default="Execution & Monitoring"))
+    w.step2_title.setText(tr("controls.workflow.step2_title", default="Variables"))
+    w.step3_title.setText(tr("controls.workflow.step3_title", default="Models"))
+    w.step4_title.setText(tr("controls.workflow.step4_title", default="Train"))
     
+    if hasattr(w, "data_empty_title"):
+        w.data_empty_title.setText(tr("controls.dataset.empty_title", default="No dataset loaded"))
+    if hasattr(w, "data_empty_subtitle"):
+        w.data_empty_subtitle.setText(
+            tr(
+                "controls.dataset.empty_subtitle",
+                default="Load a CSV or Excel file to begin.",
+            )
+        )
     w.data_info_label.setText(tr("status.no_dataset_loaded", default="No dataset loaded yet."))
-    w.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
-    w.model_summary_label.setText(tr("status.no_model_selected", default="No model selected yet."))
+    w.selection_label.setText(tr("status.variables_pending", default="0 Features Selected (Target pending)"))
+    try:
+        w.model_summary_label.setText(
+            tr(
+                "status.training_queue_header",
+                default="Training Queue ({selected}/{total})",
+                selected=0,
+                total=len(getattr(w, "model_checks", {}) or {}),
+            )
+        )
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to set model_summary_label: {e}")
+        w.model_summary_label.setText(tr("status.no_model_selected", default="No model selected yet."))
     w.progress_phase_label.setText(tr("status.idle", default="Idle"))
     w.progress_timing_label.setText(tr("status.elapsed_eta_default", default="Elapsed: -- | ETA: --"))
-    w.status_label.setText(tr("status.ready_begin", default="Ready. Load a dataset to begin."))
+    # Mid-page status line removed (footer already communicates state).
+    try:
+        w.status_label.setText("")
+        w.status_label.setVisible(False)
+    except Exception as e:
+        import logging
+        logging.debug(f"Failed to set status_label: {e}")
     w.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
 
     if hasattr(w, "feedback_event_label"):
@@ -237,31 +268,51 @@ def apply_translations(w):
     w.dev_tabs.setTabText(0, tr("controls.dialogs.activity", default="Activity"))
     w.dev_tabs.setTabText(1, tr("controls.dialogs.notifications", default="Notifications"))
     w.dev_tabs.setTabText(2, tr("controls.dialogs.jobs", default="Jobs"))
-    w.results_dialog.setWindowTitle(tr("controls.dialogs.results_hub", default="Results Hub"))
+    # Legacy compatibility: results are now embedded in the right panel, not always a dialog.
+    if hasattr(w, "results_dialog"):
+        w.results_dialog.setWindowTitle(tr("controls.dialogs.results_hub", default="Results Hub"))
 
 
 def build_layout():
-    # Main container and horizontal layout
+    # Main container (row + footer)
     w = QWidget()
-    main_layout = QHBoxLayout(w)
-    main_layout.setContentsMargins(10, 8, 10, 10)
-    main_layout.setSpacing(8)
+    outer_layout = QVBoxLayout(w)
+    # Full-bleed footer: remove global margins; individual panels own padding.
+    outer_layout.setContentsMargins(0, 0, 0, 0)
+    outer_layout.setSpacing(0)
+
+    content_row = QWidget()
+    main_layout = QHBoxLayout(content_row)
+    main_layout.setContentsMargins(16, 16, 16, 16)
+    main_layout.setSpacing(16)
+    outer_layout.addWidget(content_row, 1)
 
     # Controls shared by center panel
     w.load_button = QPushButton("Load Dataset")
     w.load_button.setObjectName("accentButton")
-    # Info row next to Load Data: file info + preview
-    info_row = QHBoxLayout()
+
+    # Add basic icons (uses platform-native glyphs; can be swapped to SVG later)
+    try:
+        w.load_button.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+        w.load_button.setIconSize(QSize(16, 16))
+    except Exception:
+        pass
+
     w.data_info_label = QLabel("No dataset loaded yet.")
     w.data_info_label.setObjectName("hintLabel")
     w.data_info_label.setWordWrap(True)
+
     w.preview_button = QPushButton("Preview")
     w.preview_button.setObjectName("ghostButton")
     w.preview_button.setMinimumWidth(92)
     w.preview_button.setEnabled(False)
-    info_row.addWidget(w.data_info_label)
-    info_row.addStretch()
-    info_row.addWidget(w.preview_button)
+    try:
+        w.preview_button.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView))
+        w.preview_button.setIconSize(QSize(16, 16))
+    except Exception as e:
+        import logging
+        logging.debug(f"Failed to set preview_button icon: {e}")
+
     w.info_button = QPushButton("About / Guide")
     w.info_button.setObjectName("ghostButton")
     w.vars_button = QPushButton("Select Variables")
@@ -269,40 +320,43 @@ def build_layout():
     w.vars_button.setEnabled(False)
     
     w.studio_btn = QPushButton("Publication Studio")
-    w.studio_btn.setObjectName("actionButton")  # We can style it normally
+    w.studio_btn.setObjectName("actionButton")
     w.studio_btn.setEnabled(False)
-    w.studio_btn.setToolTip("Configure publication-ready names for outputs.")
+    w.studio_btn.setToolTip("Select variables to unlock Publication Studio.")
     
-    w.selection_label = QLabel("Target: not selected | Features: 0")
-    w.selection_label.setObjectName("hintLabel")
-    w.selection_label.setWordWrap(True)
+    # We will alias selection_label to the subtitle object later so the badge goes into the text organically.
     w.fe_checkbox = QCheckBox("Enable Feature Engineering")
     w.fe_checkbox.setEnabled(False)
     w.fe_checkbox.setToolTip("Create and use engineered features before training.")
 
-    # CV controls
-    cv_layout = QGridLayout()
-    cv_layout.setHorizontalSpacing(8)
-    cv_layout.setVerticalSpacing(6)
+    # CV controls (compact, card-friendly)
     w.cv_mode_combo = NoWheelComboBox()
     w.cv_mode_combo.addItem("Repeated K-Fold (Recommended)", "repeated")
     w.cv_mode_combo.addItem("K-Fold", "kfold")
     w.cv_mode_combo.addItem("Nested CV (Thorough)", "nested")
     w.cv_mode_combo.addItem("Hold-Out (Fast)", "holdout")
     w.cv_mode_combo.setToolTip("Use click-to-select. Mouse wheel is disabled to prevent accidental changes.")
+    w.cv_mode_combo.setObjectName("cvMethodCombo")
+    w.cv_mode_combo.setMinimumWidth(250)
+    w.cv_mode_combo.setMaximumWidth(300)
     w.cv_spin = NoWheelSpinBox(); w.cv_spin.setMinimum(2); w.cv_spin.setValue(5)
+    w.cv_spin.setObjectName("cvFoldsSpin")
+    try:
+        w.cv_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+    except Exception:
+        pass
+    w.cv_spin.setMinimumWidth(60)
+    w.cv_spin.setMaximumWidth(60)
+    w.cv_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
     w.cv_spin.setToolTip("Folds value is changed by arrows or keyboard. Mouse wheel is disabled.")
+    w.cv_spin.setObjectName("cvFoldsSpin")
     w.cv_folds_label = QLabel("Folds:")
     w.cv_validation_label = QLabel("Validation:")
-    cv_layout.addWidget(w.cv_validation_label, 0, 0)
-    cv_layout.addWidget(w.cv_mode_combo, 0, 1, 1, 3)
-    cv_layout.addWidget(w.cv_folds_label, 1, 2)
-    cv_layout.addWidget(w.cv_spin, 1, 3)
-    cv_layout.setColumnStretch(1, 1)
 
     w.train_button = QPushButton("Start / Queue Training")
     w.train_button.setObjectName("trainButton")
     w.persist_output_checkbox = QCheckBox("Save outputs automatically")
+    w.persist_output_checkbox.setObjectName("persistOutputCheckbox")
     w.persist_output_checkbox.setChecked(False)
     w.persist_output_checkbox.setToolTip("When disabled, outputs are kept temporary and can be saved manually after training.")
     w.cancel_button = QPushButton("Cancel")
@@ -312,21 +366,20 @@ def build_layout():
     w.progress_bar = QProgressBar(); w.progress_bar.setVisible(False)
     w.plot_progress_bar = QProgressBar(); w.plot_progress_bar.setVisible(False)
 
-    # Checkboxes
+    # Model picker (inline)
     w.model_checks, model_group = create_model_checkboxes()
+    w.model_picker = model_group
     w.plot_checks, plot_group = create_plot_checkboxes()
     w.model_summary_label = QLabel("No model selected yet.")
     w.model_summary_label.setObjectName("hintLabel")
-    model_group.setVisible(False)
-
-    # Attach hidden widgets to main layout to prevent GC
-    main_layout.addWidget(model_group)
+    # Disabled until variables are selected (enabled by controller logic)
+    model_group.setEnabled(False)
 
     # Center panel: Controls + Plots
     center_panel = QWidget(); center_panel.setObjectName("workPanel")
     center_layout = QVBoxLayout(center_panel)
-    center_layout.setContentsMargins(8, 8, 8, 8)
-    center_layout.setSpacing(10)
+    center_layout.setContentsMargins(16, 16, 16, 16)
+    center_layout.setSpacing(16)
 
     center_scroll = QScrollArea()
     center_scroll.setObjectName("centerScroll")
@@ -338,10 +391,11 @@ def build_layout():
     center_content.setObjectName("centerContent")
     center_content_layout = QVBoxLayout(center_content)
     center_content_layout.setContentsMargins(0, 0, 0, 0)
-    center_content_layout.setSpacing(10)
+    center_content_layout.setSpacing(16)
 
     w.data_card = QFrame()
     w.data_card.setObjectName("workflowCard")
+    w.data_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     data_card_layout = QVBoxLayout(w.data_card)
     data_card_layout.setContentsMargins(24, 24, 24, 24)
     data_card_layout.setSpacing(8)
@@ -358,8 +412,10 @@ def build_layout():
     data_card_layout.addSpacing(16)
     
     action_row = QHBoxLayout()
+    action_row.setSpacing(8)
     action_row.addWidget(w.load_button)
-    action_row.addStretch()
+    action_row.addWidget(w.preview_button)
+    action_row.addStretch(1)
     data_card_layout.addLayout(action_row)
     
     data_card_layout.addSpacing(12)
@@ -368,12 +424,55 @@ def build_layout():
     w.info_card.setObjectName("summaryCard")
     info_card_layout = QVBoxLayout(w.info_card)
     info_card_layout.setContentsMargins(16, 16, 16, 16)
-    info_card_layout.addLayout(info_row)
+
+    # Empty state (shown until a dataset is loaded)
+    w.data_empty_state = QWidget()
+    w.data_empty_state.setObjectName("emptyState")
+    empty_layout = QVBoxLayout(w.data_empty_state)
+    empty_layout.setContentsMargins(0, 0, 0, 0)
+    empty_layout.setSpacing(8)
+
+    w.data_empty_icon = QLabel()
+    w.data_empty_icon.setObjectName("emptyStateIcon")
+    w.data_empty_icon.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+    try:
+        pix = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon).pixmap(48, 48)
+        w.data_empty_icon.setPixmap(pix)
+    except Exception as e:
+        import logging
+        logging.debug(f"Failed to set data_empty_icon pixmap: {e}")
+
+    w.data_empty_title = QLabel("No dataset loaded")
+    w.data_empty_title.setObjectName("emptyStateTitle")
+    w.data_empty_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+    w.data_empty_subtitle = QLabel("Load a CSV or Excel file to begin.")
+    w.data_empty_subtitle.setObjectName("emptyStateSubtitle")
+    w.data_empty_subtitle.setWordWrap(True)
+    w.data_empty_subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+    empty_layout.addWidget(w.data_empty_icon)
+    empty_layout.addWidget(w.data_empty_title)
+    empty_layout.addWidget(w.data_empty_subtitle)
+
+    # Loaded state (shown after a dataset is loaded)
+    w.data_loaded_state = QWidget()
+    w.data_loaded_state.setObjectName("loadedState")
+    loaded_layout = QHBoxLayout(w.data_loaded_state)
+    loaded_layout.setContentsMargins(0, 0, 0, 0)
+    loaded_layout.setSpacing(8)
+    loaded_layout.addWidget(w.data_info_label, 1)
+    w.data_loaded_state.setVisible(False)
+
+    info_card_layout.addWidget(w.data_empty_state)
+    info_card_layout.addWidget(w.data_loaded_state)
     
     data_card_layout.addWidget(w.info_card)
+    data_card_layout.addStretch(1)
 
     w.config_card = QFrame()
     w.config_card.setObjectName("workflowCard")
+    w.config_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     config_card_layout = QVBoxLayout(w.config_card)
     config_card_layout.setContentsMargins(24, 24, 24, 24)
     config_card_layout.setSpacing(8)
@@ -389,37 +488,105 @@ def build_layout():
     
     config_card_layout.addSpacing(16)
     
-    vars_row = QHBoxLayout()
-    vars_row.setSpacing(12)
-    vars_row.addWidget(w.vars_button)
-    vars_row.addWidget(w.studio_btn)
-    vars_row.addStretch()
+    # Variables card
+    w.variables_card = QFrame()
+    w.variables_card.setObjectName("appleCard")
+    variables_layout = QVBoxLayout(w.variables_card)
+    variables_layout.setContentsMargins(0, 0, 0, 0)
+    variables_layout.setSpacing(0)
+
+    # 1. Row: Select Variables
+    row1, w.vars_target_title, w.vars_target_subtitle = create_apple_settings_row(
+        right_widget=w.vars_button,
+        title_text=tr("controls.variables.row1_title", default="Target & Features"),
+        subtitle_text=tr("controls.variables.row1_subtitle", default="Requires dataset to be loaded first"),
+        show_bottom_line=True
+    )
     
-    config_card_layout.addLayout(vars_row)
+    # Selection badge goes into the subtitle dynamically
+    w.selection_label = w.vars_target_subtitle
+
+    # Optional hint area (kept for compatibility with older controller logic)
+    w.vars_blocked_hint = QLabel("")
+    w.vars_blocked_hint.setObjectName("hintLabel")
+    w.vars_blocked_hint.setWordWrap(True)
+    w.vars_blocked_hint.setVisible(False)
+    variables_layout.addWidget(w.vars_blocked_hint)
+
+    variables_layout.addWidget(row1)
+
+    # 2. Row: Publication Studio
+    row2, w.vars_studio_title, w.vars_studio_subtitle = create_apple_settings_row(
+        right_widget=w.studio_btn,
+        title_text=tr("controls.variables.row2_title", default="Publication Studio"),
+        subtitle_text=tr("controls.variables.row2_subtitle", default="Configure professional names for reports"),
+        show_bottom_line=True
+    )
+    variables_layout.addWidget(row2)
+
+    # 3. Row: Feature Engineering
+    w.fe_checkbox.setText("")  # Remove text, make it a simple toggle
+    w.fe_checkbox.setObjectName("toggleSwitch")
     
-    config_card_layout.addSpacing(12)
+    # We will add a Setup/Config button below it or next to it.
+    w.fe_setup_btn = QPushButton("Customize...")
+    w.fe_setup_btn.setObjectName("actionButton")
+    w.fe_setup_btn.setMinimumWidth(80)
+    w.fe_setup_btn.setVisible(False) # show when checked
     
-    w.config_summary_card = QFrame()
-    w.config_summary_card.setObjectName("summaryCard")
-    config_summary_layout = QVBoxLayout(w.config_summary_card)
-    config_summary_layout.setContentsMargins(16, 16, 16, 16)
-    config_summary_layout.setSpacing(12)
+    fe_controls_lay = QHBoxLayout()
+    fe_controls_lay.setContentsMargins(0,0,0,0)
+    fe_controls_lay.addWidget(w.fe_setup_btn)
+    fe_controls_lay.addWidget(w.fe_checkbox)
     
-    config_summary_layout.addWidget(w.selection_label)
-    config_summary_layout.addWidget(w.fe_checkbox)
+    fe_control_widget = QWidget()
+    fe_control_widget.setLayout(fe_controls_lay)
     
-    separator = QFrame()
-    separator.setFrameShape(QFrame.Shape.HLine)
-    separator.setFrameShadow(QFrame.Shadow.Sunken)
-    separator.setStyleSheet("border: none; border-top: 1px solid #EBEBEE;")
-    config_summary_layout.addWidget(separator)
-    
-    config_summary_layout.addLayout(cv_layout)
-    
-    config_card_layout.addWidget(w.config_summary_card)
+    row3, w.fe_title, w.fe_subtitle = create_apple_settings_row(
+        right_widget=fe_control_widget,
+        title_text=tr("controls.variables.row3_title", default="Feature Engineering"),
+        subtitle_text=tr("controls.variables.row3_subtitle", default="Automatically imputes missing values and scales numeric columns"),
+        show_bottom_line=False
+    )
+    variables_layout.addWidget(row3)
+
+    # 4. Row: CV Method
+    w.cv_mode_combo.setMinimumWidth(200)
+    w.cv_mode_combo.setMaximumWidth(200)
+    # 4. Row: CV Method
+    w.cv_card = QFrame()
+    w.cv_card.setObjectName("summaryCard")
+    w.cv_card.setMaximumWidth(850)
+    cv_card_layout = QVBoxLayout(w.cv_card)
+    cv_card_layout.setContentsMargins(0, 0, 0, 0)
+    cv_card_layout.setSpacing(0)
+
+    row4, w.cv_method_title, w.cv_method_subtitle = create_apple_settings_row(
+        right_widget=w.cv_mode_combo,
+        title_text=tr("controls.validation.row1_title", default="Validation Method"),
+        subtitle_text=tr("controls.validation.row1_subtitle", default="Select cross-validation strategy"),
+        show_bottom_line=True
+    )
+    cv_card_layout.addWidget(row4)
+
+    # 5. Row: CV Folds
+    row5, w.cv_folds_title, w.cv_folds_subtitle = create_apple_settings_row(
+        right_widget=w.cv_spin,
+        title_text=tr("controls.validation.row2_title", default="Number of Folds"),
+        subtitle_text=tr("controls.validation.row2_subtitle", default="For K-Fold validation splits"),
+        show_bottom_line=False
+    )
+    cv_card_layout.addWidget(row5)
+
+    w.variables_card.setMaximumWidth(850)
+    config_card_layout.addWidget(w.variables_card)
+    config_card_layout.addSpacing(16)
+    config_card_layout.addWidget(w.cv_card)
+    config_card_layout.addStretch(1)
 
     w.model_card = QFrame()
     w.model_card.setObjectName("workflowCard")
+    w.model_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     model_card_layout = QVBoxLayout(w.model_card)
     model_card_layout.setContentsMargins(24, 24, 24, 24)
     model_card_layout.setSpacing(8)
@@ -434,18 +601,12 @@ def build_layout():
     model_card_layout.addWidget(w.model_hint_label)
     
     model_card_layout.addSpacing(16)
-    
-    w.open_models_panel_btn = QPushButton("Choose Models...")
-    w.open_models_panel_btn.setObjectName("accentButton")
-    w.open_models_panel_btn.setToolTip("Open the model selection popup.")
-    w.open_models_panel_btn.setEnabled(False)
-    
-    model_action_row = QHBoxLayout()
-    model_action_row.addWidget(w.open_models_panel_btn)
-    model_action_row.addStretch()
-    model_card_layout.addLayout(model_action_row)
-    
-    model_card_layout.addSpacing(12)
+
+    model_body = QHBoxLayout()
+    model_body.setSpacing(16)
+    model_group.setObjectName("modelPicker")
+    model_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    model_body.addWidget(model_group, 2)
     
     w.model_badge_card = QFrame()
     w.model_badge_card.setObjectName("badgeCard")
@@ -454,10 +615,31 @@ def build_layout():
     w.model_summary_label.setObjectName("badgeLabel")
     model_badge_layout.addWidget(w.model_summary_label)
     model_badge_layout.addStretch()
-    model_card_layout.addWidget(w.model_badge_card)
+
+    w.model_selected_list = QListWidget()
+    w.model_selected_list.setObjectName("modelSelectedList")
+    w.model_selected_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+    try:
+        w.model_selected_list.setSpacing(2)
+    except Exception as e:
+        import logging
+        logging.debug(f"Failed to set model_selected_list spacing: {e}")
+
+    w.model_sidebar = QFrame()
+    w.model_sidebar.setObjectName("modelSidebar")
+    model_sidebar_layout = QVBoxLayout(w.model_sidebar)
+    model_sidebar_layout.setContentsMargins(4, 6, 4, 4)
+    model_sidebar_layout.setSpacing(10)
+    model_sidebar_layout.addWidget(w.model_badge_card)
+    model_sidebar_layout.addWidget(w.model_selected_list, 1)
+
+    model_body.addWidget(w.model_sidebar, 1)
+    model_card_layout.addLayout(model_body, 1)
+    model_card_layout.addStretch(1)
 
     w.run_card = QFrame()
     w.run_card.setObjectName("workflowCard")
+    w.run_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     run_card_layout = QVBoxLayout(w.run_card)
     run_card_layout.setContentsMargins(24, 24, 24, 24)
     run_card_layout.setSpacing(8)
@@ -473,16 +655,6 @@ def build_layout():
 
     run_card_layout.addSpacing(16)
 
-    row_train = QHBoxLayout()
-    row_train.addWidget(w.train_button)
-    row_train.setSpacing(12)
-    row_train.addWidget(w.train_button)
-    row_train.addWidget(w.cancel_button)
-    row_train.addStretch()
-    run_card_layout.addLayout(row_train)
-    
-    run_card_layout.addSpacing(12)
-
     w.run_summary_card = QFrame()
     w.run_summary_card.setObjectName("summaryCard")    
     run_summary_layout = QVBoxLayout(w.run_summary_card)
@@ -491,10 +663,6 @@ def build_layout():
     
     run_summary_layout.addWidget(w.persist_output_checkbox)
     
-    w.runtime_hint_label = QLabel("Estimated runtime: waiting for model selection")
-    w.runtime_hint_label.setObjectName("hintLabel")
-    run_summary_layout.addWidget(w.runtime_hint_label)
-    
     w.plot_summary_label = QLabel("")
     w.plot_summary_label.setObjectName("hintLabel")
     w.plot_summary_label.setWordWrap(True)
@@ -502,20 +670,24 @@ def build_layout():
 
     run_card_layout.addWidget(w.run_summary_card)
 
-    # Hidden action buttons: exposed via top menu for a cleaner workflow surface
-    w.customize_plots_btn = QPushButton("Customize Plots…")
-    w.shap_settings_btn = QPushButton("SHAP Settings…")
-    w.customize_plots_btn.setVisible(False)
-    w.shap_settings_btn.setVisible(False)
+    w.runtime_hint_label = QLabel("Estimated time: waiting for model selection")
+    w.runtime_hint_label.setObjectName("hintLabel")
 
-    w.open_output_btn = QPushButton("Open Output Folder")
-    w.open_output_btn.setObjectName("ghostButton")
-    w.reset_session_btn = QPushButton("Reset Session")
-    w.reset_session_btn.setObjectName("ghostButton")
-    w.open_output_btn.setVisible(False)
-    w.reset_session_btn.setVisible(False)
+    # Keep the legacy status label for controller compatibility, but don't
+    # consume vertical space in Step 4 (footer already communicates status).
+    w.status_label = QLabel("")
+    w.status_label.setObjectName("trainBlockerLabel")
+    w.status_label.setWordWrap(True)
+    w.status_label.setProperty("severity", "neutral")
+    w.status_label.setVisible(False)
 
-    # Progress and status (hidden until used)
+    action_row = QHBoxLayout()
+    action_row.setSpacing(10)
+    action_row.addStretch(1)
+    action_row.addWidget(w.train_button, 0)
+    action_row.addWidget(w.runtime_hint_label, 0, Qt.AlignmentFlag.AlignVCenter)
+    action_row.addWidget(w.cancel_button, 0)
+    run_card_layout.addLayout(action_row)
     w.progress_panel = QFrame()
     w.progress_panel.setObjectName("progressPanel")
     progress_layout = QVBoxLayout(w.progress_panel)
@@ -567,60 +739,96 @@ def build_layout():
     w.progress_panel.setVisible(False)
     run_card_layout.addWidget(w.progress_panel)
 
-    w.status_label = QLabel("Ready. Load a dataset to begin.")
-    w.status_label.setObjectName("statusPill")
-    w.status_label.setWordWrap(True)
-    w.status_label.setVisible(True)
-    run_card_layout.addWidget(w.status_label)
+    # Placeholder dashboard (visible even before training)
+    w.skeleton_panel = QWidget()
+    skeleton_grid = QGridLayout(w.skeleton_panel)
+    skeleton_grid.setContentsMargins(0, 0, 0, 0)
+    skeleton_grid.setHorizontalSpacing(12)
+    skeleton_grid.setVerticalSpacing(12)
 
+    def _make_skeleton(title: str, height: int = 92):
+        card = QFrame()
+        card.setObjectName("skeletonCard")
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(10)
+        t = QLabel(title)
+        t.setObjectName("skeletonTitle")
+        box = QFrame()
+        box.setObjectName("skeletonBox")
+        box.setMinimumHeight(height)
+        lay.addWidget(t)
+        lay.addWidget(box)
+        return card
+
+    sk1 = _make_skeleton("Accuracy / R²", height=280)
+    sk2 = _make_skeleton("Residuals", height=280)
+    sk3 = _make_skeleton("Feature Importance", height=220)
+    sk4 = _make_skeleton("Diagnostics", height=220)
+    skeleton_grid.addWidget(sk1, 0, 0)
+    skeleton_grid.addWidget(sk2, 0, 1)
+    skeleton_grid.addWidget(sk3, 1, 0)
+    skeleton_grid.addWidget(sk4, 1, 1)
+    skeleton_grid.setColumnStretch(0, 1)
+    skeleton_grid.setColumnStretch(1, 1)
+    run_card_layout.addWidget(w.skeleton_panel)
+
+    # Hidden action buttons: exposed via top menu for a cleaner workflow surface
+    w.customize_plots_btn = QPushButton("Customize Plots…")
+    w.shap_settings_btn = QPushButton("SHAP Settings…")
+    w.customize_plots_btn.setVisible(False)
+    w.shap_settings_btn.setVisible(False)
+
+    w.open_output_btn = QPushButton("Open Output Folder")
+    w.open_output_btn.setObjectName("ghostButton")
+    w.reset_session_btn = QPushButton("Reset Session")
+    w.reset_session_btn.setObjectName("ghostButton")
+    w.open_output_btn.setVisible(False)
+    w.reset_session_btn.setVisible(False)
+
+    # Progress and status (hidden until used)
     w.feedback_focus_label = QLabel("Now: Ready\nNext: Load dataset\nBlockers: None")
-    w.feedback_focus_label.setObjectName("hintLabel")
+    w.feedback_focus_label.setObjectName("footerLabel")
     w.feedback_focus_label.setWordWrap(True)
-    run_card_layout.addWidget(w.feedback_focus_label)
 
     w.feedback_event_label = QLabel("Latest: No recent event\nJobs: No active jobs")
-    w.feedback_event_label.setObjectName("hintLabel")
+    w.feedback_event_label.setObjectName("footerLabel")
     w.feedback_event_label.setWordWrap(True)
-    run_card_layout.addWidget(w.feedback_event_label)
 
     w.step_tabs = QTabWidget()
     w.step_tabs.setObjectName("workflowTabs")
-    w.step_tabs.setDocumentMode(True)
+    # Let QSS own the look (avoid native "utility" tab chrome)
+    w.step_tabs.setDocumentMode(False)
 
     step_data = QWidget(); step_data_lay = QVBoxLayout(step_data)
     step_data_lay.setContentsMargins(0, 0, 0, 0)
     step_data_lay.setSpacing(8)
-    step_data_lay.addWidget(w.data_card)
-    step_data_lay.addStretch()
+    step_data_lay.addWidget(w.data_card, 1)
 
     step_config = QWidget(); step_config_lay = QVBoxLayout(step_config)
     step_config_lay.setContentsMargins(0, 0, 0, 0)
     step_config_lay.setSpacing(8)
-    step_config_lay.addWidget(w.config_card)
-    step_config_lay.addStretch()
+    step_config_lay.addWidget(w.config_card, 1)
 
     step_model = QWidget(); step_model_lay = QVBoxLayout(step_model)
     step_model_lay.setContentsMargins(0, 0, 0, 0)
     step_model_lay.setSpacing(8)
-    step_model_lay.addWidget(w.model_card)
-    step_model_lay.addStretch()
+    step_model_lay.addWidget(w.model_card, 1)
 
     step_train = QWidget(); step_train_lay = QVBoxLayout(step_train)
     step_train_lay.setContentsMargins(0, 0, 0, 0)
     step_train_lay.setSpacing(8)
-    step_train_lay.addWidget(w.run_card)
-    step_train_lay.addStretch()
+    step_train_lay.addWidget(w.run_card, 1)
 
     w.step_tabs.addTab(step_data, "1. Dataset")
     w.step_tabs.addTab(step_config, "2. Variables")
     w.step_tabs.addTab(step_model, "3. Models")
     w.step_tabs.addTab(step_train, "4. Train")
-    center_content_layout.addWidget(w.step_tabs)
+    center_content_layout.addWidget(w.step_tabs, 1)
 
     # Keep the toolbox instance alive by adding it to the layout but hidden; the dialog owns the detailed UI
     center_content_layout.addWidget(plot_group)
     plot_group.setVisible(False)
-    center_content_layout.addStretch()
 
     center_scroll.setWidget(center_content)
     center_layout.addWidget(center_scroll)
@@ -647,8 +855,8 @@ def build_layout():
     w.log_box = QTextEdit(); w.log_box.setReadOnly(True)
     w.log_box.setPlaceholderText("Execution logs will appear here.")
     # Compact tables
-    w.metrics_table = QTableWidget(); w.metrics_table.setObjectName("metricsTable")
-    w.stats_table = QTableWidget(); w.stats_table.setObjectName("statsTable")
+    w.metrics_table = QTableView(); w.metrics_table.setObjectName("metricsTable")
+    w.stats_table = QTableView(); w.stats_table.setObjectName("statsTable")
     w.metrics_table.setSortingEnabled(True)
     w.stats_table.setSortingEnabled(True)
     w.metrics_table.setAlternatingRowColors(True)
@@ -662,7 +870,11 @@ def build_layout():
     w.metrics_table.horizontalHeader().setStretchLastSection(True)
     w.stats_table.horizontalHeader().setStretchLastSection(True)
     # Monospace font and no wrap for readability
-    mono = QFont("Consolas", 10)
+    try:
+        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        mono.setPointSize(10)
+    except Exception:
+        mono = QFont("Monospace", 10)
     w.result_box.setFont(mono)
     w.result_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
     w.stats_box.setFont(mono)
@@ -724,7 +936,7 @@ def build_layout():
     results_layout.addWidget(w.results_decision_card)
 
     w.results_tabs = QTabWidget()
-    w.results_tabs.setDocumentMode(True)
+    w.results_tabs.setDocumentMode(False)
 
     summary_tab = QWidget()
     summary_layout = QVBoxLayout(summary_tab)
@@ -861,13 +1073,20 @@ def build_layout():
     w.center_panel = center_panel
     main_layout.addWidget(center_panel)
 
-    # Convert right_panel to a standalone dialog
-    w.results_dialog = QDialog(w)
-    w.results_dialog.setWindowTitle(tr("controls.dialogs.results_hub", default="Results Hub"))
-    w.results_dialog.resize(900, 700)
-    dialog_layout = QVBoxLayout(w.results_dialog)
-    dialog_layout.setContentsMargins(0, 0, 0, 0)
-    dialog_layout.addWidget(right_panel)
+    # Footer bar
+    w.footer_bar = QFrame()
+    w.footer_bar.setObjectName("footerBar")
+    footer_layout = QHBoxLayout(w.footer_bar)
+    footer_layout.setContentsMargins(16, 10, 16, 10)
+    footer_layout.setSpacing(16)
+    footer_layout.addWidget(w.feedback_focus_label, 1)
+    footer_layout.addWidget(w.feedback_event_label, 1)
+    outer_layout.addWidget(w.footer_bar, 0)
+
+    # Instead of an external popup dialog, embed the results right into Step 4
+    w.right_panel = right_panel
+    w.right_panel.setVisible(False)
+    run_card_layout.addWidget(w.right_panel)
 
     apply_translations(w)
     w.apply_translations = lambda: apply_translations(w)

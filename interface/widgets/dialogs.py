@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QGridLayout, QFrame, QListWidget, QListWidgetItem, QFileDialog,
     QTabWidget, QTextEdit
 )
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt, QSettings, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import QMessageBox
 import json
@@ -22,6 +22,9 @@ from interface.widgets.checkboxes import (
 )
 from utils.localization import tr
 from utils.text import normalize_quotes_ascii as _qascii
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 # Small helpers to persist/restore dialog geometry consistently
 def _restore_geometry(widget: QDialog, key: str) -> None:
@@ -31,7 +34,7 @@ def _restore_geometry(widget: QDialog, key: str) -> None:
         if ba:
             widget.restoreGeometry(ba)
     except Exception:
-        pass
+        LOGGER.exception("Dialog geometry restore failed (%s)", key)
 
 
 def _save_geometry(widget: QDialog, key: str) -> None:
@@ -41,9 +44,9 @@ def _save_geometry(widget: QDialog, key: str) -> None:
         try:
             s.sync()
         except Exception:
-            pass
+            LOGGER.exception("Dialog settings sync failed (%s)", key)
     except Exception:
-        pass
+        LOGGER.exception("Dialog geometry save failed (%s)", key)
 
 class DataPreviewDialog(QDialog):
     def __init__(self, df, parent=None):
@@ -163,7 +166,7 @@ class ColumnSelectionDialog(QDialog):
                         self.target.setCurrentIndex(i)
                         break
             except Exception:
-                pass
+                LOGGER.exception("Failed to preselect initial target")
         lay.addWidget(self.target)
 
         # Features header row with filter
@@ -229,7 +232,18 @@ class ColumnSelectionDialog(QDialog):
             for name, cb in self.feats.items():
                 cb.setVisible(t in name.lower() if t else True)
             self._update_ok()
-        self.filter_edit.textChanged.connect(apply_filter)
+
+        # Debounce filter updates for large column lists.
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(120)
+
+        def _apply_filter_now():
+            apply_filter(self.filter_edit.text())
+
+        self._filter_timer.timeout.connect(_apply_filter_now)
+        self.filter_edit.textChanged.connect(lambda _t: self._filter_timer.start())
+        _apply_filter_now()
 
         def set_all(state: bool):
             for cb in self.feats.values():
@@ -408,7 +422,17 @@ class ModelSelectionDialog(QDialog):
                 cb.setVisible((t in name.lower()) if t else True)
             self._update_ok()
 
-        self.search_edit.textChanged.connect(apply_filter)
+        # Debounce to avoid repaint churn while typing.
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(120)
+
+        def _apply_search_now():
+            apply_filter(self.search_edit.text())
+
+        self._search_timer.timeout.connect(_apply_search_now)
+        self.search_edit.textChanged.connect(lambda _t: self._search_timer.start())
+        _apply_search_now()
 
         def set_visible(state: bool):
             for cb in self.model_checks.values():
@@ -666,7 +690,18 @@ class PlotSelectionDialog(QDialog):
                 if header is not None:
                     header.setVisible(any_visible)
             self._update_summary()
-        self.search_edit.textChanged.connect(apply_plot_filter)
+
+        # Debounce filter updates; plot lists can be long.
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(120)
+
+        def _apply_plot_filter_now():
+            apply_plot_filter(self.search_edit.text())
+
+        self._search_timer.timeout.connect(_apply_plot_filter_now)
+        self.search_edit.textChanged.connect(lambda _t: self._search_timer.start())
+        _apply_plot_filter_now()
 
         # Initial summary, geometry restore/persist
         self._update_summary()
@@ -690,7 +725,7 @@ class PlotSelectionDialog(QDialog):
             try:
                 self.settings.sync()
             except Exception:
-                pass
+                LOGGER.exception("PlotSelectionDialog settings sync failed")
         except Exception:
             # Do not block closing on settings errors
             pass
@@ -805,6 +840,34 @@ class ShapSettingsDialog(QDialog):
         inc_row.addWidget(self.include_edit)
         root.addLayout(inc_row)
 
+        # Feature dependence / correlation handling
+        dep_row = QHBoxLayout()
+        dep_row.addWidget(QLabel(tr("dialogs.shap_settings.dependence_label", default="Feature dependence:")))
+        self.dep_combo = QComboBox()
+        self.dep_combo.addItem(
+            tr(
+                "dialogs.shap_settings.dependence_interventional",
+                default="Interventional (independent)",
+            ),
+            "interventional",
+        )
+        self.dep_combo.addItem(
+            tr(
+                "dialogs.shap_settings.dependence_partition",
+                default="Correlation-aware (partition)",
+            ),
+            "partition",
+        )
+        self.dep_combo.setToolTip(
+            tr(
+                "dialogs.shap_settings.dependence_tip",
+                default="Interventional assumes features are independent (fast, common). Partition groups correlated features for correlation-aware attributions (slower, often preferred when collinearity is high).",
+            )
+        )
+        dep_row.addWidget(self.dep_combo)
+        dep_row.addStretch()
+        root.addLayout(dep_row)
+
         self.preview_label = QLabel("")
         self.preview_label.setObjectName("hintLabel")
         self.preview_label.setWordWrap(True)
@@ -826,17 +889,28 @@ class ShapSettingsDialog(QDialog):
                 try:
                     self.topn_spin.setValue(int(topn))
                 except Exception:
-                    pass
+                    LOGGER.exception("Invalid SHAP top_n setting")
             var_enabled = str(settings.value('shap/var_enabled', 'false')).lower() in ("true","1","yes")
             self.var_chk.setChecked(var_enabled)
             if var_enabled:
                 try:
                     self.var_spin.setValue(float(settings.value('shap/var_thresh', 1e-8)))
                 except Exception:
-                    pass
+                    LOGGER.exception("Invalid SHAP var_thresh setting")
             else:
                 self.var_spin.setEnabled(False)
             self.include_edit.setText(str(settings.value('shap/always_include', '') or ''))
+
+        # dependence mode (defaults to interventional)
+        try:
+            dep_mode = str(settings.value('shap/dependence_mode', 'interventional') or 'interventional')
+        except Exception:
+            dep_mode = 'interventional'
+        dep_mode = dep_mode.strip().lower()
+        dep_idx = self.dep_combo.findData(dep_mode)
+        if dep_idx < 0:
+            dep_idx = self.dep_combo.findData('interventional')
+        self.dep_combo.setCurrentIndex(max(0, dep_idx))
 
         self.var_chk.toggled.connect(self.var_spin.setEnabled)
         self.rb_all.toggled.connect(lambda _checked: self._sync_topn_controls())
@@ -845,6 +919,7 @@ class ShapSettingsDialog(QDialog):
         self.topn_spin.valueChanged.connect(lambda _v: self._update_preview())
         self.var_spin.valueChanged.connect(lambda _v: self._update_preview())
         self.include_edit.textChanged.connect(lambda _t: self._update_preview())
+        self.dep_combo.currentIndexChanged.connect(lambda _i: self._update_preview())
         self._sync_topn_controls()
         self._update_preview()
 
@@ -889,13 +964,16 @@ class ShapSettingsDialog(QDialog):
             )
         else:
             inc_txt = tr("dialogs.shap_settings.include_none", default="always include: none")
+
+        dep_txt = str(self.dep_combo.currentText() or "")
         self.preview_label.setText(
             tr(
                 "dialogs.shap_settings.current_profile",
-                default="Current profile -> {mode}, {var}, {include}",
+                default="Current profile -> {mode}, {var}, {include}, {dep}",
                 mode=mode_txt,
                 var=var_txt,
                 include=inc_txt,
+                dep=dep_txt,
             )
         )
 
@@ -912,9 +990,13 @@ class ShapSettingsDialog(QDialog):
             s.setValue('shap/var_thresh', float(self.var_spin.value()))
         s.setValue('shap/always_include', self.include_edit.text())
         try:
+            s.setValue('shap/dependence_mode', str(self.dep_combo.currentData() or 'interventional'))
+        except Exception:
+            s.setValue('shap/dependence_mode', 'interventional')
+        try:
             s.sync()
         except Exception:
-            pass
+            LOGGER.exception("SHAP settings sync failed")
         # Save geometry and close
         _save_geometry(self, 'dialogs/ShapSettings/geometry')
         self.accept()
@@ -928,6 +1010,11 @@ class ShapSettingsDialog(QDialog):
         self.var_spin.setValue(1e-8)
         self.var_spin.setEnabled(False)
         self.include_edit.clear()
+        try:
+            dep_idx = self.dep_combo.findData('interventional')
+            self.dep_combo.setCurrentIndex(max(0, dep_idx))
+        except Exception:
+            pass
         self._sync_topn_controls()
         self._update_preview()
 
@@ -956,7 +1043,10 @@ class AboutDialog(QDialog):
         title = QLabel(tr("dialogs.about.app_title", default="Machine Learning Trainer"))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         from PyQt6.QtGui import QFont
-        title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        title_font = QFont()
+        title_font.setPointSize(18)
+        title_font.setWeight(QFont.Weight.Bold)
+        title.setFont(title_font)
         title.setObjectName("titleLabel")
         
         subtitle = QLabel(tr("dialogs.about.app_subtitle", default="Professional Regression Model Training and Evaluation"))
@@ -980,7 +1070,10 @@ class AboutDialog(QDialog):
         v_dev.setSpacing(12)
         
         dev_title = QLabel(tr("dialogs.about.dev_title", default="Developer / Author"))
-        dev_title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        dev_title_font = QFont()
+        dev_title_font.setPointSize(16)
+        dev_title_font.setWeight(QFont.Weight.Bold)
+        dev_title.setFont(dev_title_font)
         dev_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v_dev.addWidget(dev_title)
         
@@ -1125,17 +1218,21 @@ class PublicationExportDialog(QDialog):
         self.tabs.setDocumentMode(True)
         root.addWidget(self.tabs, 1)
 
+
         self.variables_tab = QWidget()
+        self.variables_tab.setStyleSheet("background: #FFF;")
         self.value_labels_tab = QWidget()
-        self.tabs.addTab(self.variables_tab, tr("dialogs.publication_helper.step_variables", default="1. Variables"))
-        self.tabs.addTab(self.value_labels_tab, tr("dialogs.publication_helper.step_value_labels", default="2. Value Labels"))
+        self.value_labels_tab.setStyleSheet("background: #FFF;")
+        self.tabs.addTab(self.variables_tab, tr("dialogs.publication_helper.step_variables", default="Variables"))
+        self.tabs.addTab(self.value_labels_tab, tr("dialogs.publication_helper.step_value_labels", default="Value Labels"))
 
         self._build_variables_tab()
         self._build_value_labels_tab()
 
         if not self._setup_mode:
             self.assets_tab = QWidget()
-            self.tabs.addTab(self.assets_tab, tr("dialogs.publication_helper.step_review", default="3. Package Review"))
+            self.assets_tab.setStyleSheet("background: #FFF;")
+            self.tabs.addTab(self.assets_tab, tr("dialogs.publication_helper.step_review", default="Review & Export"))
             self._build_assets_tab(default_output_dir)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -1379,6 +1476,9 @@ class PublicationExportDialog(QDialog):
         layout.addLayout(actions_row)
 
         self.variable_map_table = QTableWidget(0, 3)
+        self.variable_map_table.setFrameShape(QFrame.Shape.NoFrame)
+        self.variable_map_table.setShowGrid(False)
+        self.variable_map_table.setStyleSheet("QTableWidget::item { border-bottom: 1px solid #E2EAF3; } QTableWidget::item:selected { background-color: #E6F0FA; color: #1C1C1E; }")
         self.variable_map_table.setAlternatingRowColors(True)
         self.variable_map_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.variable_map_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -1653,6 +1753,9 @@ class PublicationExportDialog(QDialog):
         layout.addLayout(actions_row)
 
         self.value_rule_table = QTableWidget(0, 4)
+        self.value_rule_table.setFrameShape(QFrame.Shape.NoFrame)
+        self.value_rule_table.setShowGrid(False)
+        self.value_rule_table.setStyleSheet("QTableWidget::item { border-bottom: 1px solid #E2EAF3; } QTableWidget::item:selected { background-color: #E6F0FA; color: #1C1C1E; }")
         self.value_rule_table.setAlternatingRowColors(True)
         self.value_rule_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.value_rule_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -1715,7 +1818,7 @@ class PublicationExportDialog(QDialog):
             if isinstance(data, dict):
                 return data
         except Exception:
-            pass
+            LOGGER.exception("Failed to load social science mapping")
         return {}
 
     @staticmethod

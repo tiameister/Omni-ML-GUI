@@ -1,3 +1,7 @@
+"""
+Residual analysis and diagnostic plotting utilities for MLTrainer.
+Includes functions for saving residual plots and distributions.
+"""
 import os
 import numpy as np
 import matplotlib
@@ -31,21 +35,39 @@ def plot_residuals(
     pipe,
     X,
     y,
-    outdir: str):
+    outdir: str,
+    preds=None,
+    cv=5):
     out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
-        preds = pipe.predict(X)
+        if preds is None:
+            from sklearn.model_selection import cross_val_predict
+
+            preds = cross_val_predict(pipe, X, y, cv=cv, n_jobs=-1)
         resid = y - preds
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.scatter(preds, resid, s=30, alpha=0.5, c='tab:blue', edgecolor='none')
-        sns.kdeplot(x=preds, y=resid, levels=5, color='black', linewidths=1, alpha=0.5, ax=ax)
-        ax.axhline(0, color='red', linestyle='--', linewidth=1)
+        
+        # Calculate true statistics before sampling plot rendering
         mu, sigma = resid.mean(), resid.std()
+        
+        # ML pipeline optimization: Downsample massive scatter/KDE layers to prevent memory explosion & viewer crashes
+        if len(resid) > 5000:
+            idx = np.random.RandomState(42).choice(len(resid), size=5000, replace=False)
+            plot_preds = np.asarray(preds)[idx]
+            plot_resid = np.asarray(resid)[idx]
+        else:
+            plot_preds = preds
+            plot_resid = resid
+            
+        fig, ax = plt.subplots(figsize=(8, 6))
+        # rasterized=True prevents SVG/PDF engines from freezing on millions of paths
+        ax.scatter(plot_preds, plot_resid, s=30, alpha=0.5, c='tab:blue', edgecolor='none', rasterized=True)
+        sns.kdeplot(x=plot_preds, y=plot_resid, levels=5, color='black', linewidths=1, alpha=0.5, ax=ax)
+        ax.axhline(0, color='red', linestyle='--', linewidth=1)
         text = f'Mean={mu:.2f}\nStd={sigma:.2f}'
         ax.text(0.95, 0.95, text, transform=ax.transAxes,
                 ha='right', va='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.7))
-        ax.set_xlabel('Predicted', fontsize=12)
+        ax.set_xlabel(f'Predicted {getattr(y, "name", "") or ""}'.strip(), fontsize=12)
         ax.set_ylabel('Residuals', fontsize=12)
         ax.set_title(f'Residuals - {model_name}', fontsize=14)
         ax.grid(True, linestyle='--', alpha=0.5)
@@ -61,11 +83,16 @@ def plot_residual_distribution(
     pipe,
     X,
     y,
-    outdir: str):
+    outdir: str,
+    preds=None,
+    cv=5):
     out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
-        preds = pipe.predict(X)
+        if preds is None:
+            from sklearn.model_selection import cross_val_predict
+
+            preds = cross_val_predict(pipe, X, y, cv=cv, n_jobs=-1)
         resid = y - preds
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.histplot(resid, bins=30, stat='density', color='skyblue', edgecolor='black', alpha=0.6, ax=ax)
@@ -91,11 +118,16 @@ def plot_qq(
     pipe,
     X,
     y,
-    outdir: str):
+    outdir: str,
+    preds=None,
+    cv=5):
     out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
-        preds = pipe.predict(X)
+        if preds is None:
+            from sklearn.model_selection import cross_val_predict
+
+            preds = cross_val_predict(pipe, X, y, cv=cv, n_jobs=-1)
         resid = y - preds
         (osm, osr), (slope, intercept, r) = stats.probplot(resid, dist='norm')
         r2 = r**2

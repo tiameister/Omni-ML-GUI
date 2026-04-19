@@ -1,11 +1,27 @@
+from __future__ import annotations
+
 import os
 import sys
 import time
 import json
 import re
-from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QDialog, QLabel, QListWidgetItem, QTableWidgetItem
-from PyQt6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction, QActionGroup
-from PyQt6.QtCore import Qt, QUrl, QSettings, QCoreApplication
+from typing import TYPE_CHECKING
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QFileDialog,
+    QMessageBox,
+    QDialog,
+    QListWidgetItem,
+    QTableWidgetItem,
+    QWidget,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QStyle,
+)
+from PyQt6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction
+from PyQt6.QtCore import Qt, QUrl, QSettings, QCoreApplication, QTimer
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtCore import QThread, pyqtSignal, QObject
 
@@ -24,23 +40,129 @@ from interface.widgets.dialogs import (
     CommandPaletteDialog,
     PublicationExportDialog,
 )
+from interface.widgets.fe_studio import FeatureEngineeringStudioDialog
 from interface.widgets.checkboxes import get_plot_pages, get_optional_script_label_map
-from interface.logic.training import run_training
-from data.loader import SUPPORTED_DATASET_EXTENSIONS
-import pandas as pd
+from data.file_types import SUPPORTED_DATASET_EXTENSIONS
 from config import OUTPUT_DIR, RUN_TAG
 from utils.logger import get_logger
 from utils.paths import get_output_root, safe_folder_name
 from utils.text import normalize_quotes_ascii
 from utils.localization import i18n, tr
 
+if TYPE_CHECKING:
+    import pandas as pd
+
 
 LOGGER = get_logger(__name__)
 UI_LAYOUT_VERSION = 5
 
 
+_PANDAS = None
+
+
+def _pd():
+    """
+    Lazy-import pandas to keep GUI startup fast.
+    Returns:
+        pandas module
+    """
+    global _PANDAS
+    if _PANDAS is None:
+        import pandas as _pandas
+
+        _PANDAS = _pandas
+    return _PANDAS
+
+
+class _TrainWorker(QObject):
+    """
+    Worker class for running model training in a background thread.
+    Handles progress, error, and result signals for the training process.
+    """
+    finished = pyqtSignal(object, object, object, object, object, float)
+    error = pyqtSignal(str)
+    progress = pyqtSignal(int, int)
+    plot_progress = pyqtSignal(int, int)
+    log = pyqtSignal(str)
+
+    def __init__(
+        self,
+        effective_state,
+        selected_models,
+        selected_plots,
+        cv_mode,
+        cv_folds,
+        should_cancel_fn,
+        run_id,
+        dataset_label,
+        persist_outputs,
+        feature_value_labels,
+        shap_settings,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.effective_state = effective_state
+        self.selected_models = selected_models
+        self.selected_plots = selected_plots
+        self.cv_mode = cv_mode
+        self.cv_folds = cv_folds
+        self.should_cancel_fn = should_cancel_fn
+        self.run_id = run_id
+        self.dataset_label = dataset_label
+        self.persist_outputs = persist_outputs
+        self.feature_value_labels = feature_value_labels
+        self.shap_settings = shap_settings
+
+    def run(self):
+        t0 = time.time()
+        try:
+            # Import lazily so GUI startup doesn't pay sklearn/pandas cost.
+            from interface.logic.training import run_training as run_training_ui
+
+            metrics_df, fitted_models, stats_df, stats_summary_df, out_info = run_training_ui(
+                self.effective_state,
+                self.selected_models,
+                self.selected_plots,
+                cv_mode=self.cv_mode,
+                cv_folds=self.cv_folds,
+                external_progress_cb=self.progress.emit,
+                external_plot_progress_cb=self.plot_progress.emit,
+                external_log_cb=self.log.emit,
+                should_cancel=self.should_cancel_fn,
+                run_id=self.run_id,
+                dataset_label=self.dataset_label,
+                persist_outputs=self.persist_outputs,
+                feature_value_labels=self.feature_value_labels,
+                shap_settings=self.shap_settings,
+            )
+            elapsed = time.time() - t0
+            self.finished.emit(metrics_df, fitted_models, stats_df, stats_summary_df, out_info, elapsed)
+        except Exception as e:
+            LOGGER.exception("Training worker failed")
+            self.error.emit(str(e))
+
+
+class _DatasetLoadWorker(QObject):
+    finished = pyqtSignal(object, object, object)  # returns (df, error_msg, path)
+
+    def __init__(self, load_callable, path):
+        super().__init__()
+        self.load_callable = load_callable
+        self.path = path
+
+    def run(self):
+        try:
+            df = self.load_callable(self.path)
+            self.finished.emit(df, None, self.path)
+        except Exception as e:
+            self.finished.emit(None, str(e), self.path)
+
 
 class MLTrainerApp(QMainWindow):
+    """
+    Main application window for the ML Trainer GUI.
+    Manages UI state, user actions, session recovery, and job execution.
+    """
     def __init__(self):
         super().__init__()
         self._snapshot_guard = True
@@ -76,11 +198,6 @@ class MLTrainerApp(QMainWindow):
         self._feedback_latest_event = tr("controls.feedback.latest_none", default="No recent event")
         self._feedback_jobs = tr("controls.feedback.jobs_idle", default="No active jobs")
         self._has_prompted_for_studio = False
-        # Set window icon
-        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-        icon_path = os.path.join(proj_root, 'images', 'fau.png')
-        if os.path.exists(icon_path):
-            pass
 
         self._restore_language_preference()
         self._restore_theme_preference()
@@ -95,6 +212,17 @@ class MLTrainerApp(QMainWindow):
         self.controls = build_layout()
         self._assemble_ui()
         self._load_stylesheet()
+
+        self._model_summary_timer = QTimer(self)
+        self._model_summary_timer.setSingleShot(True)
+        self._model_summary_timer.setInterval(80)
+        self._model_summary_timer.timeout.connect(self._refresh_model_summary)
+
+        self._runtime_hint_timer = QTimer(self)
+        self._runtime_hint_timer.setSingleShot(True)
+        self._runtime_hint_timer.setInterval(80)
+        self._runtime_hint_timer.timeout.connect(self._update_runtime_hint)
+
         self._connect_signals()
         self._init_job_manager_ui()
         self._restore_event_log()
@@ -210,6 +338,43 @@ class MLTrainerApp(QMainWindow):
         self.resize(1400, 860)
         self.setMinimumSize(980, 640)
         self.setAcceptDrops(True)
+        # macOS: restore native window chrome feel.
+        if sys.platform == "darwin":
+            try:
+                self.setUnifiedTitleAndToolBarOnMac(True)
+            except Exception:
+                pass
+            try:
+                self.setDocumentMode(True)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _clear_table(table) -> None:
+        if table is None:
+            return
+        # QTableView path
+        if hasattr(table, "setModel"):
+            try:
+                table.setModel(None)
+            except Exception:
+                pass
+        # QTableWidget path
+        if hasattr(table, "clear"):
+            try:
+                table.clear()
+            except Exception:
+                pass
+        if hasattr(table, "setRowCount"):
+            try:
+                table.setRowCount(0)
+            except Exception:
+                pass
+        if hasattr(table, "setColumnCount"):
+            try:
+                table.setColumnCount(0)
+            except Exception:
+                pass
 
     @staticmethod
     def _format_duration(seconds: float | None) -> str:
@@ -288,6 +453,8 @@ class MLTrainerApp(QMainWindow):
         if best_row is None:
             return None
 
+        pd = _pd()
+
         normalized = {
             re.sub(r"[^a-z0-9]+", "", str(col).lower()): col
             for col in list(best_row.index)
@@ -319,7 +486,14 @@ class MLTrainerApp(QMainWindow):
                 default="Complete training to receive a recommendation.",
             ),
         }
-        if not isinstance(metrics_df, pd.DataFrame) or metrics_df.empty:
+        if metrics_df is None:
+            return summary
+
+        try:
+            pd = _pd()
+            if not isinstance(metrics_df, pd.DataFrame) or metrics_df.empty:
+                return summary
+        except Exception:
             return summary
 
         best_row = metrics_df.iloc[0]
@@ -428,8 +602,8 @@ class MLTrainerApp(QMainWindow):
         container = QWidget()
         container.setObjectName("appCanvas")
         vbox = QVBoxLayout(container)
-        vbox.setContentsMargins(8, 8, 8, 8)
-        vbox.setSpacing(8)
+        vbox.setContentsMargins(16, 16, 16, 16)
+        vbox.setSpacing(16)
         vbox.addWidget(self.header)
         vbox.addWidget(central)
         self.setCentralWidget(container)
@@ -463,12 +637,11 @@ class MLTrainerApp(QMainWindow):
             self.header.toggleModelsButton.clicked.connect(lambda _checked=False: self._open_models_panel())
         if hasattr(self.header, "toggleResultsButton"):
             self.header.toggleResultsButton.clicked.connect(self._toggle_results_panel)
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.clicked.connect(lambda _checked=False: self._open_models_panel())
         # Feature engineering is toggled in UI and applied during training.
         c.fe_checkbox.toggled.connect(self._on_toggle_feature_engineering)
         # Preview button
         c.preview_button.clicked.connect(self._on_preview)
+        c.fe_setup_btn.clicked.connect(self._on_fe_settings)
         # Customize plots
         c.customize_plots_btn.clicked.connect(self._on_customize_plots)
         # SHAP settings
@@ -489,14 +662,23 @@ class MLTrainerApp(QMainWindow):
         c.cv_mode_combo.currentTextChanged.connect(self._on_cv_mode_changed)
         # Model summary refresh
         for chk in c.model_checks.values():
-            chk.toggled.connect(self._refresh_model_summary)
+            chk.toggled.connect(self._refresh_model_summary_debounced)
             chk.toggled.connect(self._on_user_setting_changed)
         for chk in c.plot_checks.values():
-            chk.toggled.connect(self._update_runtime_hint)
+            chk.toggled.connect(self._update_runtime_hint_debounced)
             chk.toggled.connect(self._on_user_setting_changed)
 
         c.cv_mode_combo.currentIndexChanged.connect(self._on_user_setting_changed)
         c.cv_spin.valueChanged.connect(self._on_user_setting_changed)
+
+        if hasattr(c, "step_tabs"):
+            c.step_tabs.currentChanged.connect(
+                lambda _idx: self._sync_step_tab_titles(
+                    has_data=self.state.df is not None,
+                    has_variables=bool(self.state.target is not None and self.state.features),
+                    has_models=any(chk.isChecked() for chk in c.model_checks.values()),
+                )
+            )
 
         if hasattr(c, "jobs_run_next_btn"):
             c.jobs_run_next_btn.clicked.connect(self._start_next_queued_job)
@@ -526,7 +708,8 @@ class MLTrainerApp(QMainWindow):
     def _setup_menu_bar(self):
         mb = self.menuBar()
         try:
-            mb.setNativeMenuBar(False)
+            # macOS: use system menu bar (Apple-like). Other OSes: keep in-window menu.
+            mb.setNativeMenuBar(sys.platform == "darwin")
         except Exception:
             pass
 
@@ -861,8 +1044,8 @@ class MLTrainerApp(QMainWindow):
             {
                 "group": grp_view,
                 "title": tr("command_palette.view.open_model_selection", default="Open Model Selection"),
-                "description": tr("command_palette.view.open_model_selection_desc", default="Open the model selection popup."),
-                "keywords": "model selection popup",
+                "description": tr("command_palette.view.open_model_selection_desc", default="Go to Step 3: Models."),
+                "keywords": "model selection models step 3",
                 "enabled": True,
                 "callback": self._open_models_panel,
             },
@@ -1131,44 +1314,68 @@ class MLTrainerApp(QMainWindow):
             return
 
         tbl = c.jobs_table
-        tbl.setSortingEnabled(False)
-        tbl.setRowCount(len(self._jobs))
-        status_colors = {
-            "Queued": QColor("#2E4D67"),
-            "Running": QColor("#125284"),
-            "Completed": QColor("#1E633B"),
-            "Failed": QColor("#8D1E1E"),
-            "Cancelled": QColor("#8A6200"),
-        }
-
-        for row, job in enumerate(self._jobs):
-            created = time.strftime("%H:%M:%S", time.localtime(float(job.get("created_at", time.time()))))
-            elapsed_val = job.get("elapsed")
-            if elapsed_val is None and job.get("status") == "Running":
-                started = job.get("started_at")
-                elapsed_val = (time.time() - float(started)) if started else None
-
-            values = [
-                str(job.get("id", "")),
-                str(job.get("status", "")),
-                self._summarize_models(list(job.get("selected_models", []))),
-                self._format_cv_label(str(job.get("cv_mode", "repeated")), int(job.get("cv_folds", 5))),
-                created,
-                self._format_duration(float(elapsed_val)) if elapsed_val is not None else "--",
-                str(job.get("message", "")),
-            ]
-
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(val)
-                if col == 1:
-                    item.setForeground(status_colors.get(str(job.get("status", "")), QColor("#2E4D67")))
-                tbl.setItem(row, col, item)
-
+        prev_signals = tbl.blockSignals(True)
+        prev_updates = None
         try:
-            tbl.resizeColumnsToContents()
-        except Exception:
-            pass
-        tbl.setSortingEnabled(True)
+            tbl.setSortingEnabled(False)
+            try:
+                prev_updates = tbl.updatesEnabled()
+                tbl.setUpdatesEnabled(False)
+            except Exception:
+                prev_updates = None
+
+            tbl.setRowCount(len(self._jobs))
+            status_colors = {
+                "Queued": QColor("#2E4D67"),
+                "Running": QColor("#125284"),
+                "Completed": QColor("#1E633B"),
+                "Failed": QColor("#8D1E1E"),
+                "Cancelled": QColor("#8A6200"),
+            }
+
+            for row, job in enumerate(self._jobs):
+                created = time.strftime(
+                    "%H:%M:%S", time.localtime(float(job.get("created_at", time.time())))
+                )
+                elapsed_val = job.get("elapsed")
+                if elapsed_val is None and job.get("status") == "Running":
+                    started = job.get("started_at")
+                    elapsed_val = (time.time() - float(started)) if started else None
+
+                values = [
+                    str(job.get("id", "")),
+                    str(job.get("status", "")),
+                    self._summarize_models(list(job.get("selected_models", []))),
+                    self._format_cv_label(str(job.get("cv_mode", "repeated")), int(job.get("cv_folds", 5))),
+                    created,
+                    self._format_duration(float(elapsed_val)) if elapsed_val is not None else "--",
+                    str(job.get("message", "")),
+                ]
+
+                for col, val in enumerate(values):
+                    item = QTableWidgetItem(val)
+                    if col == 1:
+                        item.setForeground(
+                            status_colors.get(str(job.get("status", "")), QColor("#2E4D67"))
+                        )
+                    tbl.setItem(row, col, item)
+
+            try:
+                tbl.resizeColumnsToContents()
+            except Exception:
+                LOGGER.exception("Failed to resize columns in jobs UI")
+        finally:
+            try:
+                tbl.setSortingEnabled(True)
+            except Exception:
+                pass
+            try:
+                if prev_updates is not None:
+                    tbl.setUpdatesEnabled(prev_updates)
+            except Exception:
+                pass
+            tbl.blockSignals(prev_signals)
+
         self._refresh_feedback_context()
         self._save_recovery_checkpoint()
 
@@ -1382,6 +1589,12 @@ class MLTrainerApp(QMainWindow):
         has_variables = self.state.target is not None and bool(self.state.features)
         has_models = any(chk.isChecked() for chk in c.model_checks.values())
 
+        if hasattr(c, "skeleton_panel"):
+            try:
+                c.skeleton_panel.setVisible(not running)
+            except Exception:
+                pass
+
         if running:
             c.load_button.setEnabled(False)
             c.vars_button.setEnabled(False)
@@ -1397,8 +1610,8 @@ class MLTrainerApp(QMainWindow):
             c.cv_mode_combo.setEnabled(True)
             c.cv_spin.setEnabled((c.cv_mode_combo.currentData() or "repeated") != "holdout")
             c.train_button.setEnabled(has_variables and has_models)
-            if hasattr(c, "open_models_panel_btn"):
-                c.open_models_panel_btn.setEnabled(has_variables)
+            if hasattr(c, "model_picker"):
+                c.model_picker.setEnabled(has_variables)
             c.info_button.setEnabled(True)
             c.customize_plots_btn.setEnabled(True)
             c.shap_settings_btn.setEnabled(True)
@@ -1412,8 +1625,8 @@ class MLTrainerApp(QMainWindow):
             c.fe_checkbox.setEnabled(has_data)
             c.preview_button.setEnabled(has_data)
             c.train_button.setEnabled(has_variables and has_models)
-            if hasattr(c, "open_models_panel_btn"):
-                c.open_models_panel_btn.setEnabled(has_variables)
+            if hasattr(c, "model_picker"):
+                c.model_picker.setEnabled(has_variables)
             c.info_button.setEnabled(True)
             c.customize_plots_btn.setEnabled(True)
             c.shap_settings_btn.setEnabled(True)
@@ -1446,7 +1659,8 @@ class MLTrainerApp(QMainWindow):
             self._sync_menu_actions()
             return
 
-        self._apply_job_to_controls(next_job)
+        # SSOT Fix: Stop applying job metadata back to UI controls!
+        # Just launch it directly from the job dict without overriding user's active screen
         self._launch_job_id = int(next_job.get("id"))
         self._on_train()
 
@@ -1701,7 +1915,14 @@ class MLTrainerApp(QMainWindow):
             "feature_count_after_fe": 0,
         }
 
-        if not isinstance(self.state.df, pd.DataFrame):
+        if self.state.df is None:
+            return self.state, base_runtime
+
+        try:
+            pd = _pd()
+            if not isinstance(self.state.df, pd.DataFrame):
+                return self.state, base_runtime
+        except Exception:
             return self.state, base_runtime
 
         raw_target = str(self.state.target or "").strip()
@@ -1765,7 +1986,13 @@ class MLTrainerApp(QMainWindow):
         effective_state.set_dataframe(effective_df)
         effective_state.set_features(mapped_target, mapped_features)
         effective_state.fe_enabled = bool(self.state.fe_enabled)
-        effective_state.model_checks = dict(self.state.model_checks)
+        try:
+            effective_state.model_checks = {
+                str(name): bool(chk.isChecked())
+                for name, chk in getattr(self.controls, "model_checks", {}).items()
+            }
+        except Exception:
+            effective_state.model_checks = dict(self.state.model_checks)
         effective_state.studio_profile = self._studio_profile_data(profile)
         return effective_state, {
             "rename_map": applied_map,
@@ -1783,6 +2010,8 @@ class MLTrainerApp(QMainWindow):
         has_models = any(chk.isChecked() for chk in c.model_checks.values())
         if not has_data:
             c.vars_button.setEnabled(False)
+            if hasattr(c, "vars_target_subtitle"):
+                c.vars_target_subtitle.setText(tr("controls.variables.row1_subtitle", default="Requires dataset to be loaded first"))
             if hasattr(c, "studio_btn"):
                 c.studio_btn.setEnabled(False)
             c.preview_button.setEnabled(False)
@@ -1790,28 +2019,46 @@ class MLTrainerApp(QMainWindow):
             c.fe_checkbox.setChecked(False)
             c.fe_checkbox.blockSignals(False)
             c.fe_checkbox.setEnabled(False)
-            c.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
-            c.selection_label.setToolTip("")
+            try:
+                c.selection_label.setVisible(False)
+            except Exception:
+                pass
+            self._set_step2_selection_badge_state("blocked")
             c.kpi_target_value.setText(tr("status.kpi.not_selected", default="Not selected"))
             c.train_button.setEnabled(False)
-            if hasattr(c, "open_models_panel_btn"):
-                c.open_models_panel_btn.setEnabled(False)
+            if hasattr(c, "model_picker"):
+                c.model_picker.setEnabled(False)
+            if hasattr(c, "studio_btn"):
+                c.studio_btn.setToolTip(tr("controls.studio.disabled_no_data", default="Load a dataset first."))
             self._set_guided_step_state(has_data=False, has_variables=False, has_models=False)
             return
 
         c.vars_button.setEnabled(True)
+        if hasattr(c, "vars_target_subtitle"):
+            c.vars_target_subtitle.setText(tr("controls.variables.row1_subtitle_ready", default="Click to select target regression variable"))
         c.preview_button.setEnabled(True)
         c.fe_checkbox.setEnabled(True)
+        try:
+            c.selection_label.setVisible(True)
+        except Exception:
+            pass
 
         if self.state.target is None or not self.state.features:
             if hasattr(c, "studio_btn"):
                 c.studio_btn.setEnabled(False)
-            c.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
+                c.studio_btn.setToolTip(tr("controls.studio.disabled_no_vars", default="Select target and features to unlock Publication Studio."))
+            c.selection_label.setText(
+                tr(
+                    "status.variables_pending",
+                    default="0 Features Selected (Target pending)",
+                )
+            )
+            self._set_step2_selection_badge_state("pending")
             c.selection_label.setToolTip("")
             c.kpi_target_value.setText(tr("status.kpi.not_selected", default="Not selected"))
             c.train_button.setEnabled(False)
-            if hasattr(c, "open_models_panel_btn"):
-                c.open_models_panel_btn.setEnabled(False)
+            if hasattr(c, "model_picker"):
+                c.model_picker.setEnabled(False)
             self._set_guided_step_state(has_data=True, has_variables=False, has_models=False)
             return
 
@@ -1837,13 +2084,30 @@ class MLTrainerApp(QMainWindow):
             tr("status.selected_features_tooltip", default="Selected features:\n")
             + (", ".join(feat_names) if feat_names else tr("common.none", default="none"))
         )
+        
+        if hasattr(c, "vars_target_subtitle"):
+            c.vars_target_subtitle.setText(f"Target: {target_disp} \n{len(feat_names)} Features selected")
+
         c.kpi_target_value.setText(target_disp)
+        self._set_step2_selection_badge_state("ready")
         c.train_button.setEnabled(has_models)
         if hasattr(c, "studio_btn"):
             c.studio_btn.setEnabled(True)
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.setEnabled(True)
+            c.studio_btn.setToolTip(tr("controls.studio.tooltip", default="Configure publication-ready names for outputs."))
+        if hasattr(c, "model_picker"):
+            c.model_picker.setEnabled(True)
         self._set_guided_step_state(has_data=True, has_variables=True, has_models=has_models)
+
+    def _set_step2_selection_badge_state(self, state: str):
+        c = self.controls
+        if not hasattr(c, "selection_label"):
+            return
+        try:
+            c.selection_label.setProperty("state", str(state))
+            c.selection_label.style().unpolish(c.selection_label)
+            c.selection_label.style().polish(c.selection_label)
+        except Exception:
+            pass
 
     def _apply_snapshot(self, snapshot: dict):
         prev_guard = self._snapshot_guard
@@ -2056,7 +2320,7 @@ class MLTrainerApp(QMainWindow):
             settings.setValue("recovery/checkpointJson", json.dumps(payload, ensure_ascii=False))
             settings.setValue("recovery/checkpointAt", int(payload["saved_at"]))
         except Exception:
-            pass
+            LOGGER.exception("Failed to save recovery checkpoint")
 
     def _load_recovery_checkpoint(self):
         settings = QSettings()
@@ -2123,8 +2387,8 @@ class MLTrainerApp(QMainWindow):
         c.vars_button.setEnabled(True)
         c.train_button.setEnabled(False)
         c.fe_checkbox.setEnabled(True)
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.setEnabled(False)
+        if hasattr(c, "model_picker"):
+            c.model_picker.setEnabled(False)
 
         abs_path = os.path.abspath(path)
         self._current_dataset_path = abs_path
@@ -2138,6 +2402,10 @@ class MLTrainerApp(QMainWindow):
                 cols=df.shape[1],
             )
         )
+        if hasattr(c, "data_empty_state"):
+            c.data_empty_state.setVisible(False)
+        if hasattr(c, "data_loaded_state"):
+            c.data_loaded_state.setVisible(True)
         c.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
         c.selection_label.setToolTip("")
         c.preview_button.setEnabled(True)
@@ -2289,7 +2557,7 @@ class MLTrainerApp(QMainWindow):
             self._push_notification("warning", partial_msg)
             self.statusBar().showMessage(partial_msg)
 
-    def _push_notification(self, level: str, message: str):
+    def _push_notification(self, level: str, message: str, **kwargs):
         level_norm = str(level or "info").upper()
         if level_norm not in {"INFO", "SUCCESS", "WARNING", "ERROR"}:
             level_norm = "INFO"
@@ -2569,10 +2837,17 @@ class MLTrainerApp(QMainWindow):
 
     def _render_results_from_run(self, metrics_df, stats_summary_df, out_info):
         c = self.controls
-        self._latest_metrics_df = metrics_df.copy(deep=True) if isinstance(metrics_df, pd.DataFrame) else None
-        self._latest_stats_summary_df = (
-            stats_summary_df.copy(deep=True) if isinstance(stats_summary_df, pd.DataFrame) else None
-        )
+        self._latest_metrics_df = None
+        self._latest_stats_summary_df = None
+        try:
+            pd = _pd()
+            self._latest_metrics_df = metrics_df.copy(deep=True) if isinstance(metrics_df, pd.DataFrame) else None
+            self._latest_stats_summary_df = (
+                stats_summary_df.copy(deep=True) if isinstance(stats_summary_df, pd.DataFrame) else None
+            )
+        except Exception:
+            self._latest_metrics_df = None
+            self._latest_stats_summary_df = None
 
         if metrics_df is not None:
             if not metrics_df.empty:
@@ -2594,12 +2869,12 @@ class MLTrainerApp(QMainWindow):
         try:
             self._fill_table(c.metrics_table, metrics_df)
         except Exception:
-            pass
+            LOGGER.exception("Table fill failed for metrics_table")
         if stats_summary_df is not None:
             try:
                 self._fill_table(c.stats_table, stats_summary_df)
             except Exception:
-                pass
+                LOGGER.exception("Table fill failed for stats_table")
 
         run_dir = ""
         persist_outputs = False
@@ -2717,14 +2992,22 @@ class MLTrainerApp(QMainWindow):
         profile: dict[str, dict] = {}
 
         selected_variables = self._build_publication_selected_variables()
-        if not isinstance(self.state.df, pd.DataFrame) or self.state.df.empty:
+        df = self.state.df
+        if df is None:
+            return profile
+
+        try:
+            pd = _pd()
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                return profile
+        except Exception:
             return profile
 
         for col_name in selected_variables:
-            if col_name not in self.state.df.columns:
+            if col_name not in df.columns:
                 continue
 
-            series = self.state.df[col_name]
+            series = df[col_name]
             rec = profile.setdefault(
                 col_name,
                 {
@@ -2783,9 +3066,54 @@ class MLTrainerApp(QMainWindow):
             return
         c.step_tabs.setTabEnabled(0, True)
         c.step_tabs.setTabEnabled(1, bool(has_data))
-        c.step_tabs.setTabEnabled(2, bool(has_variables) and bool(has_models))
+        c.step_tabs.setTabEnabled(2, bool(has_variables))
         if c.step_tabs.count() > 3:
             c.step_tabs.setTabEnabled(3, bool(has_variables) and bool(has_models))
+
+        # Keep Step 4 warnings polite and local (near the disabled action).
+        if hasattr(c, "status_label") and (not getattr(c, "cancel_button", None) or not c.cancel_button.isVisible()):
+            try:
+                if not has_data:
+                    c.status_label.setProperty("severity", "warn")
+                    c.status_label.setText(
+                        tr(
+                            "status.train_requires_dataset",
+                            default="⚠️ Please complete Step 1 (Dataset) before training.",
+                        )
+                    )
+                else:
+                    c.status_label.setProperty("severity", "neutral")
+            except Exception:
+                pass
+        self._sync_step_tab_titles(has_data=has_data, has_variables=has_variables, has_models=has_models)
+
+    def _sync_step_tab_titles(self, *, has_data: bool, has_variables: bool, has_models: bool):
+        c = self.controls
+        if not hasattr(c, "step_tabs"):
+            return
+
+        c.step_tabs.setTabText(0, tr("controls.tabs.step1", default="1. Dataset"))
+        c.step_tabs.setTabText(1, tr("controls.tabs.step2", default="2. Variables"))
+        c.step_tabs.setTabText(2, tr("controls.tabs.step3", default="3. Models"))
+        if c.step_tabs.count() > 3:
+            c.step_tabs.setTabText(3, tr("controls.tabs.step4", default="4. Train"))
+
+        try:
+            ok_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
+        except Exception:
+            ok_icon = QIcon()
+
+        try:
+            # Only show checkmarks for *past* steps that are validated.
+            # This prevents a "time-travel" checkmark from appearing on future tabs.
+            current_idx = int(c.step_tabs.currentIndex())
+            c.step_tabs.setTabIcon(0, ok_icon if (has_data and current_idx > 0) else QIcon())
+            c.step_tabs.setTabIcon(1, ok_icon if (has_variables and current_idx > 1) else QIcon())
+            c.step_tabs.setTabIcon(2, ok_icon if (has_models and current_idx > 2) else QIcon())
+            if c.step_tabs.count() > 3:
+                c.step_tabs.setTabIcon(3, QIcon())
+        except Exception:
+            pass
 
     def _go_to_step(self, index: int):
         c = self.controls
@@ -2798,8 +3126,8 @@ class MLTrainerApp(QMainWindow):
             pass
 
     def _open_models_panel(self):
-        if self._open_model_selection_dialog(prompt_for_training=False):
-            self.statusBar().showMessage(tr("status.model_selection_updated", default="Model selection updated"))
+        self._go_to_step(2)
+        self.statusBar().showMessage(tr("status.models_opened", default="Models"))
 
     def _restore_window_state(self):
         settings = QSettings()
@@ -2811,7 +3139,7 @@ class MLTrainerApp(QMainWindow):
             LOGGER.warning("Invalid ui/layoutVersion value '%s'; falling back to default layout.", raw_layout_version)
 
         if layout_version == UI_LAYOUT_VERSION:
-            # Model selection moved to popup UX; keep side model panel hidden.
+            # Model selection is inline (Step 3); keep side model panel hidden.
             self._left_panel_visible = False
             self._right_panel_visible = str(settings.value("ui/rightPanelVisible", "false")).lower() in ("true", "1", "yes")
         else:
@@ -2862,22 +3190,24 @@ class MLTrainerApp(QMainWindow):
 
     def _is_results_dialog_visible(self) -> bool:
         c = self.controls
-        if not hasattr(c, "results_dialog"):
-            return bool(self._right_panel_visible)
-        return bool(c.results_dialog.isVisible())
+        if hasattr(c, "right_panel"):
+            return bool(c.right_panel.isVisible())
+        return bool(self._right_panel_visible)
 
     def _set_results_dialog_visible(self, visible: bool):
         c = self.controls
         target_visible = bool(visible)
         self._right_panel_visible = target_visible
 
-        if hasattr(c, "results_dialog"):
+        if hasattr(c, "right_panel"):
             if target_visible:
-                c.results_dialog.show()
-                c.results_dialog.raise_()
-                c.results_dialog.activateWindow()
+                c.right_panel.setVisible(True)
+                if hasattr(c, "skeleton_panel"):
+                    c.skeleton_panel.setVisible(False)
             else:
-                c.results_dialog.hide()
+                c.right_panel.setVisible(False)
+                if hasattr(c, "skeleton_panel"):
+                    c.skeleton_panel.setVisible(True)
 
         self._sync_header_panel_buttons()
 
@@ -2887,7 +3217,7 @@ class MLTrainerApp(QMainWindow):
         self._capture_snapshot(clear_redo=True)
 
     def _toggle_models_panel(self, checked: bool):
-        # Legacy hook kept for compatibility; model selection is now popup-based.
+        # Legacy hook kept for compatibility; model selection is now inline on Step 3.
         _ = checked
         self._left_panel_visible = False
         self._open_models_panel()
@@ -2909,6 +3239,18 @@ class MLTrainerApp(QMainWindow):
         i18n.remove_listener(self._language_listener)
         super().closeEvent(event)
 
+    def _refresh_model_summary_debounced(self):
+        try:
+            self._model_summary_timer.start()
+        except Exception:
+            self._refresh_model_summary()
+
+    def _update_runtime_hint_debounced(self):
+        try:
+            self._runtime_hint_timer.start()
+        except Exception:
+            self._update_runtime_hint()
+
     def _refresh_model_summary(self):
         c = self.controls
         selected = [name for name, chk in c.model_checks.items() if chk.isChecked()]
@@ -2917,21 +3259,64 @@ class MLTrainerApp(QMainWindow):
         has_variables = self.state.target is not None and bool(self.state.features)
         has_models = bool(selected)
 
-        if selected:
-            c.model_summary_label.setText(
-                tr(
-                    "status.selected_models_summary",
-                    default="Selected models: {selected}/{total} ({preview})",
-                    selected=len(selected),
-                    total=total,
-                    preview=", ".join(selected[:3]) + ("..." if len(selected) > 3 else ""),
-                )
+        c.model_summary_label.setText(
+            tr(
+                "status.training_queue_header",
+                default="Training Queue ({selected}/{total})",
+                selected=len(selected),
+                total=total,
             )
-        else:
-            c.model_summary_label.setText(tr("status.no_model_selected", default="No model selected yet."))
+        )
 
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.setEnabled(has_variables)
+        if hasattr(c, "model_picker"):
+            c.model_picker.setEnabled(has_variables)
+
+        if hasattr(c, "model_selected_list"):
+            try:
+                lst = c.model_selected_list
+                lst.clear()
+
+                # Import model descriptions
+                try:
+                    from models.model_descriptions import MODEL_DESCRIPTIONS
+                except Exception:
+                    MODEL_DESCRIPTIONS = {}
+
+                for name in sorted(selected):
+                    item = QListWidgetItem("")
+                    row = QWidget()
+                    row_layout = QHBoxLayout(row)
+                    row_layout.setContentsMargins(6, 2, 6, 2)
+                    row_layout.setSpacing(6)
+
+                    label = QLabel(str(name))
+                    # Set tooltip to model description if available
+                    desc = MODEL_DESCRIPTIONS.get(str(name), str(name))
+                    label.setToolTip(desc)
+                    item.setToolTip(desc)
+
+                    btn = QPushButton("×")
+                    btn.setObjectName("removeChip")
+                    btn.setToolTip(tr("controls.models.remove", default="Remove"))
+                    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    try:
+                        btn.setMinimumSize(24, 24)
+                    except Exception:
+                        pass
+                    try:
+                        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+                    except Exception:
+                        pass
+                    btn.clicked.connect(lambda _checked=False, n=name: c.model_checks.get(n).setChecked(False) if c.model_checks.get(n) else None)
+
+                    row_layout.addWidget(label, 1)
+                    row_layout.addWidget(btn, 0)
+
+                    item.setSizeHint(row.sizeHint())
+                    lst.addItem(item)
+                    lst.setItemWidget(item, row)
+            except Exception:
+                pass
 
         c.train_button.setEnabled(has_variables and has_models)
 
@@ -2985,8 +3370,12 @@ class MLTrainerApp(QMainWindow):
         selected_models = [name for name, chk in c.model_checks.items() if chk.isChecked()]
         if not selected_models:
             c.runtime_hint_label.setText(
-                tr("status.runtime_select_model", default="Estimated runtime: select at least one model")
+                tr("status.runtime_select_model", default="Estimated time: select at least one model")
             )
+            try:
+                c.runtime_hint_label.setToolTip("")
+            except Exception:
+                pass
             return
 
         mode = c.cv_mode_combo.currentData() or 'repeated'
@@ -3014,26 +3403,30 @@ class MLTrainerApp(QMainWindow):
         mins, secs = divmod(max(est_seconds, 1), 60)
         if mins > 0:
             txt = tr(
-                "status.runtime_estimate_min",
-                default="Estimated runtime: ~{mins}m {secs}s for {models} model(s)",
+                "status.runtime_estimate_min_short",
+                default="Estimated time: ~{mins}m {secs}s",
                 mins=mins,
                 secs=secs,
-                models=len(selected_models),
             )
         else:
             txt = tr(
-                "status.runtime_estimate_sec",
-                default="Estimated runtime: ~{secs}s for {models} model(s)",
+                "status.runtime_estimate_sec_short",
+                default="Estimated time: ~{secs}s",
                 secs=secs,
-                models=len(selected_models),
-            )
-        if selected_scripts:
-            txt += tr(
-                "status.runtime_extra_tasks",
-                default=" + {count} extra analysis task(s)",
-                count=len(selected_scripts),
             )
         c.runtime_hint_label.setText(txt)
+
+        try:
+            detail = tr(
+                "status.runtime_estimate_tooltip",
+                default="Models: {models}\nValidation: {mode}\nExtra analysis tasks: {extra}",
+                models=len(selected_models),
+                mode=str(c.cv_mode_combo.currentText() or ""),
+                extra=len(selected_scripts),
+            )
+            c.runtime_hint_label.setToolTip(detail)
+        except Exception:
+            pass
 
     def _refresh_plot_check_states_from_settings(self):
         """Sync the sidebar plot checkboxes with persisted QSettings, in case they were changed in the dialog."""
@@ -3133,21 +3526,31 @@ class MLTrainerApp(QMainWindow):
         event.ignore()
 
     def _load_dataset_path(self, path: str):
-        try:
-            df = self.state.load_dataset(path)
-        except Exception as e:
-            QMessageBox.critical(self, tr("dialogs.load_error.title", default="Load Error"), str(e))
-            LOGGER.exception("Failed loading dataset from %s", path)
-            self._push_notification(
-                "error",
-                tr(
-                    "notifications.dataset_load_failed",
-                    default="Dataset load failed: {filename}",
-                    filename=os.path.basename(path),
-                ),
-            )
-            return
+        self._push_notification("info", tr("notifications.loading_dataset", default="Loading dataset in background..."), timeout=3000)
+        self.statusBar().showMessage(tr("status.loading_data", default="Loading dataset..."))
+        self.setEnabled(False)  # Lock UI
+        
+        self._load_thread = QThread(self)
+        self._load_worker = _DatasetLoadWorker(self.state.load_dataset, path)
+        self._load_worker.moveToThread(self._load_thread)
+        
+        self._load_thread.started.connect(self._load_worker.run)
+        self._load_worker.finished.connect(self._on_dataset_load_finished)
+        self._load_worker.finished.connect(self._load_thread.quit)
+        self._load_worker.finished.connect(self._load_worker.deleteLater)
+        self._load_thread.finished.connect(self._load_thread.deleteLater)
+        self._load_thread.start()
 
+    def _on_dataset_load_finished(self, df, error_msg, path):
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+        
+        if error_msg is not None:
+            QMessageBox.critical(self, tr("dialogs.load_error.title", default="Load Error"), str(error_msg))
+            LOGGER.exception(f"Failed loading dataset from {path}")
+            self._push_notification("error", tr("notifications.dataset_load_failed", default=f"Dataset load failed: {os.path.basename(path)}"))
+            return
+            
         dlg = DataPreviewDialog(df, self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -3264,12 +3667,13 @@ class MLTrainerApp(QMainWindow):
                 + (", ".join(feat_names) if feat_names else tr("common.none", default="none"))
             )
             self.controls.kpi_target_value.setText(target_disp)
+            self._set_step2_selection_badge_state("ready")
             has_models = any(chk.isChecked() for chk in self.controls.model_checks.values())
             has_variables = bool(t and feats)
             
             self.controls.train_button.setEnabled(has_models and has_variables)
-            if hasattr(self.controls, "open_models_panel_btn"):
-                self.controls.open_models_panel_btn.setEnabled(has_variables)
+            if hasattr(self.controls, "model_picker"):
+                self.controls.model_picker.setEnabled(has_variables)
             if hasattr(self.controls, "studio_btn"):
                 self.controls.studio_btn.setEnabled(has_variables)
             self.controls.status_label.setText(
@@ -3281,7 +3685,7 @@ class MLTrainerApp(QMainWindow):
                 blockers=tr("controls.feedback.blockers_none", default="None"),
             )
             self._set_guided_step_state(has_data=True, has_variables=True, has_models=has_models)
-            self._go_to_step(2)
+            # self._go_to_step(2)  # Avoid automatic jump so user can configure Feature Engineering in Step 2
             self._update_runtime_hint()
             self._sync_menu_actions()
             self._push_notification(
@@ -3348,7 +3752,21 @@ class MLTrainerApp(QMainWindow):
 
     def _on_train(self):
         c = self.controls
-        request = self._collect_training_request()
+        
+        # SSOT Queue Execution: If launching a queued job, bypass current UI state!
+        if getattr(self, "_launch_job_id", None) is not None:
+            queued_job = self._job_by_id(self._launch_job_id)
+            if queued_job:
+                request = {
+                    "selected_models": queued_job.get("selected_models", []),
+                    "selected_plots": queued_job.get("selected_plots", []),
+                    "cv_mode": queued_job.get("cv_mode", "repeated"),
+                    "cv_folds": queued_job.get("cv_folds", 5),
+                }
+            else:
+                request = self._collect_training_request()
+        else:
+            request = self._collect_training_request()
         if request is None:
             self._launch_job_id = None
             return
@@ -3469,8 +3887,8 @@ class MLTrainerApp(QMainWindow):
         self._shap_map = {}
         self._figure_records = []
         self._shap_records = []
-        c.metrics_table.clear(); c.metrics_table.setRowCount(0); c.metrics_table.setColumnCount(0)
-        c.stats_table.clear(); c.stats_table.setRowCount(0); c.stats_table.setColumnCount(0)
+        self._clear_table(c.metrics_table)
+        self._clear_table(c.stats_table)
         c.figures_img.clear(); c.shap_img.clear()
         if hasattr(c, "figures_list"):
             c.figures_list.clear()
@@ -3518,7 +3936,6 @@ class MLTrainerApp(QMainWindow):
 
         # Create worker and thread
         self._cancelled = False
-        app = self
 
         # Build a stable per-run output id (so outputs don't scatter into versioned model folders).
         try:
@@ -3530,40 +3947,43 @@ class MLTrainerApp(QMainWindow):
         from utils.paths import make_run_id
         run_id = make_run_id(prefix=f"job{active_job['id']}_{dataset_label}")
 
-        class TrainWorker(QObject):
-            finished = pyqtSignal(object, object, object, object, object, float)
-            error = pyqtSignal(str)
-            progress = pyqtSignal(int, int)
-            plot_progress = pyqtSignal(int, int)
-            log = pyqtSignal(str)
+        # Read SHAP settings once in the UI thread (core runner must stay Qt-free)
+        try:
+            qsettings = QSettings()
+            shap_settings = {
+                "top_n": qsettings.value("shap/top_n", -1),
+                "var_enabled": qsettings.value("shap/var_enabled", "false"),
+                "var_thresh": qsettings.value("shap/var_thresh", ""),
+                "always_include": qsettings.value("shap/always_include", ""),
+                "dependence_mode": qsettings.value("shap/dependence_mode", "interventional"),
+            }
+        except Exception:
+            shap_settings = {}
 
-            def run(self):
-                import time
-                t0 = time.time()
-                try:
-                    metrics_df, fitted_models, stats_df, stats_summary_df, out_info = run_training(
-                        effective_state,
-                        selected_models,
-                        selected_plots,
-                        cv_mode=cv_mode,
-                        cv_folds=cv_folds,
-                        external_progress_cb=self.progress.emit,
-                        external_plot_progress_cb=self.plot_progress.emit,
-                        external_log_cb=self.log.emit,
-                        should_cancel=lambda: getattr(app, '_cancelled', False),
-                        run_id=run_id,
-                        dataset_label=dataset_label,
-                        persist_outputs=persist_outputs,
-                        feature_value_labels=feature_value_labels,
-                    )
-                    elapsed = time.time() - t0
-                    self.finished.emit(metrics_df, fitted_models, stats_df, stats_summary_df, out_info, elapsed)
-                except Exception as e:
-                    self.error.emit(str(e))
-
-        self._thread = QThread()
-        self._worker = TrainWorker()
+        # Safe cleanup of any previous dead thread to plug memory leaks
+        try:
+            if getattr(self, '_thread', None) is not None:
+                # If the C++ object isn't deleted, this works. Otherwise it raises RuntimeError.
+                if self._thread.isRunning():
+                    self._thread.quit()
+                    self._thread.wait()
+        except RuntimeError:
+            pass # C++ object already deleted by deleteLater
+            
+        self._thread = None
+        self._worker = None
+        
+        self._thread = QThread(self)
+        self._worker = _TrainWorker(
+            effective_state, selected_models, selected_plots, cv_mode, cv_folds,
+            lambda: getattr(self, '_cancelled', False),
+            run_id, dataset_label, persist_outputs, feature_value_labels, shap_settings
+        )
         self._worker.moveToThread(self._thread)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.error.connect(self._worker.deleteLater)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._update_progress)
         self._worker.plot_progress.connect(self._update_plot_progress)
@@ -3597,7 +4017,7 @@ class MLTrainerApp(QMainWindow):
                 if hasattr(c, "results_tabs"):
                     c.results_tabs.setCurrentIndex(0)
             except Exception:
-                pass
+                LOGGER.exception("Failed to render results from training run")
 
             self._thread.quit()
             self._thread.wait()
@@ -3616,7 +4036,7 @@ class MLTrainerApp(QMainWindow):
                     if c.plot_progress_bar.maximum() > 0 else "0/0 (0%)"
                 )
             except Exception:
-                pass
+                LOGGER.exception("Failed updating completion UI")
 
             running_job = self._job_by_id(self._active_job_id)
             if running_job is not None:
@@ -3757,8 +4177,8 @@ class MLTrainerApp(QMainWindow):
         c.fe_checkbox.setChecked(False)
         c.fe_checkbox.setEnabled(False)
         c.preview_button.setEnabled(False)
-        if hasattr(c, "open_models_panel_btn"):
-            c.open_models_panel_btn.setEnabled(False)
+        if hasattr(c, "model_picker"):
+            c.model_picker.setEnabled(False)
         c.cancel_button.setEnabled(False)
         c.cancel_button.setVisible(False)
         c.progress_panel.setVisible(False)
@@ -3772,6 +4192,10 @@ class MLTrainerApp(QMainWindow):
         c.plot_progress_bar.setMaximum(1)
 
         c.data_info_label.setText(tr("status.no_dataset_loaded", default="No dataset loaded yet."))
+        if hasattr(c, "data_loaded_state"):
+            c.data_loaded_state.setVisible(False)
+        if hasattr(c, "data_empty_state"):
+            c.data_empty_state.setVisible(True)
         c.selection_label.setText(tr("status.target_not_selected_features_zero", default="Target: not selected | Features: 0"))
         c.selection_label.setToolTip("")
         c.status_label.setText(tr("status.session_reset_load_begin", default="Session reset. Load a dataset to begin."))
@@ -3789,12 +4213,8 @@ class MLTrainerApp(QMainWindow):
             c.shap_list.clear()
         self._refresh_figure_filter_options()
         self._refresh_shap_filter_options()
-        c.metrics_table.clear()
-        c.metrics_table.setRowCount(0)
-        c.metrics_table.setColumnCount(0)
-        c.stats_table.clear()
-        c.stats_table.setRowCount(0)
-        c.stats_table.setColumnCount(0)
+        self._clear_table(c.metrics_table)
+        self._clear_table(c.stats_table)
 
         c.kpi_dataset_value.setText(tr("status.kpi.not_loaded", default="Not loaded"))
         c.kpi_target_value.setText(tr("status.kpi.not_selected", default="Not selected"))
@@ -3852,7 +4272,6 @@ class MLTrainerApp(QMainWindow):
             c.status_label.setText(
                 tr("status.training_progress", default="Training progress: {current}/{total} ({pct}%)", current=current, total=total, pct=pct)
             )
-            c.status_label.setVisible(True)
             c.kpi_run_value.setText(tr("status.kpi.running_pct", default="Running ({pct}%)", pct=pct))
         QApplication.processEvents()
 
@@ -3890,15 +4309,12 @@ class MLTrainerApp(QMainWindow):
         # Update mini status label when receiving START/DONE logs
         if text.startswith("START:") or text.startswith("Start"):
             c.status_label.setText(text)
-            c.status_label.setVisible(True)
             self.statusBar().showMessage(text)
         elif text.startswith("DONE:") or text.startswith("[Done]"):
             c.status_label.setText(text)
-            c.status_label.setVisible(True)
             self.statusBar().showMessage(text)
         elif text.startswith("[Warning]") or text.startswith("Warning"):
             c.status_label.setText(text)
-            c.status_label.setVisible(True)
             self.statusBar().showMessage(text)
 
     def _on_cancel(self):
@@ -3918,11 +4334,63 @@ class MLTrainerApp(QMainWindow):
             self._refresh_job_table()
         self._push_notification("warning", tr("notifications.cancellation_requested", default="Cancellation requested for current run."))
 
+    def _on_fe_settings(self):
+        c = self.controls
+        dlg = FeatureEngineeringStudioDialog(self.state.fe_config, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_config = dlg.get_config()
+            if new_config != self.state.fe_config:
+                self.state.fe_config = new_config
+                self._capture_snapshot(clear_redo=True)
+
+            if dlg.export_requested and self.state.dataset_path:
+                from features.feature_engineering import generate_static_fe_dataset
+                from PyQt6.QtWidgets import QMessageBox
+                import pandas as pd
+                import os
+                
+                try:
+                    df = pd.read_csv(self.state.dataset_path)
+                except Exception as e:
+                    QMessageBox.warning(self, tr("error.dataset_load", default="Dataset Load Error"), f"Could not load dataset for FE static export.\n{e}")
+                    return
+                    
+                target = getattr(self.state, "target_col", None)
+                out_dir = os.path.dirname(self.state.dataset_path)
+                base_name = os.path.splitext(os.path.basename(self.state.dataset_path))[0]
+                out_file = f"{base_name}_engineered.csv"
+                
+                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                try:
+                    out_path = generate_static_fe_dataset(df, self.state.fe_config, target, out_dir, out_file)
+                    self.statusBar().showMessage(f"Static Engineered Dataset Generated: {out_file}", 6000)
+                    self._push_notification("success", f"Static feature engineering file generated: {out_file}", title="FE Success")
+                    
+                    # Switch immediately to the generated dataset
+                    self.controls.path_edit.setText(out_path)
+                    
+                    # Call load button to kick off ingestion pipeline
+                    self._on_load()
+                    
+                    # Turn off 'Feature Engineering' checkbox since it's now statically embedded
+                    if hasattr(self.controls, "fe_checkbox"):
+                        self.controls.fe_checkbox.setChecked(False)
+                        
+                except Exception as e:
+                    QMessageBox.critical(self, "Export Failed", f"Static Dataset generation failed:\n{e}")
+                finally:
+                    QApplication.restoreOverrideCursor()
+
     def _on_toggle_feature_engineering(self, checked: bool):
         # Feature engineering is applied in the training pipeline.
         self.state.fe_enabled = bool(checked)
         self._sync_menu_actions()
         self._update_runtime_hint()
+        c = self.controls
+        
+        if hasattr(c, "fe_setup_btn"):
+            c.fe_setup_btn.setVisible(checked)
+            
         if not checked:
             self.statusBar().showMessage(tr("status.feature_engineering_disabled", default="Feature Engineering disabled"))
             self._push_notification("info", tr("notifications.feature_engineering_disabled", default="Feature engineering disabled."))
@@ -3958,46 +4426,30 @@ class MLTrainerApp(QMainWindow):
         self._capture_snapshot(clear_redo=True)
 
     def _fill_table(self, table, df: pd.DataFrame):
-        if df is None or df.empty:
-            table.clear()
-            table.setRowCount(0)
-            table.setColumnCount(0)
-            return
-
-        def _format_cell(value):
-            try:
-                if pd.isna(value):
-                    return "-"
-            except Exception:
-                pass
-            try:
-                if isinstance(value, int):
-                    return f"{int(value)}"
-            except Exception:
-                pass
-            try:
-                if isinstance(value, float):
-                    abs_val = abs(float(value))
-                    if abs_val >= 1000:
-                        return f"{float(value):,.2f}"
-                    if abs_val >= 1:
-                        return f"{float(value):.4f}"
-                    return f"{float(value):.6f}"
-            except Exception:
-                pass
-            return str(value)
-
-        cols = list(df.columns)
-        table.setColumnCount(len(cols))
-        table.setHorizontalHeaderLabels([str(c) for c in cols])
-        table.setRowCount(len(df))
-        for i in range(len(df)):
-            for j, col in enumerate(cols):
-                val = df.iloc[i][col]
-                from PyQt6.QtWidgets import QTableWidgetItem
-                item = QTableWidgetItem(_format_cell(val))
-                table.setItem(i, j, item)
-        table.resizeColumnsToContents()
+        """Feed a table with MVC architecture to avoid UI freezing."""
+        from interface.widgets.models import PandasTableModel
+        try:
+            if df is None or df.empty:
+                if hasattr(table, "setModel"):
+                    table.setModel(None)
+                elif hasattr(table, "clear"):
+                    table.clear()
+                    table.setRowCount(0)
+                    table.setColumnCount(0)
+                return
+            
+            # Using QAbstractTableModel specifically to prevent UI freezing
+            # caused by manual QTableWidgetItem loops! (MVC over GUI widgets)
+            model = PandasTableModel(df, parent=table)
+            
+            if hasattr(table, "setModel"):
+                table.setModel(model)
+                if hasattr(table, "resizeColumnsToContents"):
+                    table.resizeColumnsToContents()
+            else:
+                LOGGER.error("Cannot fill table: Does not support MVC setModel")
+        except Exception as e:
+            LOGGER.error(f"Failed to populate MVC table with dataframe: {e}", exc_info=True)
 
 
 def run_app():
@@ -4019,22 +4471,32 @@ def run_app():
     except Exception:
         pass
 
-    # Set global font to support Turkish characters
-    from PyQt6.QtGui import QFont
-    app.setFont(QFont("Segoe UI", 10))
+    # Typography: prefer Inter (if installed), otherwise fall back to system fonts.
+    from PyQt6.QtGui import QFont, QFontDatabase
+    try:
+        if "Inter" in QFontDatabase.families():
+            app.setFont(QFont("Inter", 10))
+        elif sys.platform == "darwin":
+            app.setFont(QFont(".AppleSystemUIFont", 10))
+        else:
+            app.setFont(QFont("Segoe UI", 10))
+    except Exception:
+        pass
     # Set application icon
     proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     icon_path = os.path.join(proj_root, 'images', 'fau.png')
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
-    app.setStyle("Fusion")
-    pal = QPalette()
-    pal.setColor(QPalette.ColorRole.Window, QColor("#EEF2F6"))
-    pal.setColor(QPalette.ColorRole.Base, QColor("#FFFFFF"))
-    pal.setColor(QPalette.ColorRole.WindowText, QColor("#18212B"))
-    pal.setColor(QPalette.ColorRole.Button, QColor("#FFFFFF"))
-    pal.setColor(QPalette.ColorRole.Highlight, QColor("#005EA8"))
-    app.setPalette(pal)
+    # Avoid forcing a non-native palette on macOS.
+    if sys.platform != "darwin":
+        app.setStyle("Fusion")
+        pal = QPalette()
+        pal.setColor(QPalette.ColorRole.Window, QColor("#EEF2F6"))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#18212B"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#005EA8"))
+        app.setPalette(pal)
 
     # show splash/startup
     try:

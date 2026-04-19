@@ -7,8 +7,13 @@ Optionally:
 - output/mcar/little_mcar_test.txt (if package available)
 """
 import os
+from utils.paths import EVALUATION_DIR
 import pandas as pd
 import numpy as np
+
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_ROOT = str(os.environ.get('MLTRAINER_RUN_ROOT', '') or '').strip()
@@ -22,7 +27,7 @@ except Exception:
 if ANALYSIS_ROOT:
     BASE = os.path.join(ANALYSIS_ROOT, 'mcar')
 elif RUN_ROOT and os.path.isdir(RUN_ROOT):
-    BASE = os.path.join(RUN_ROOT, '1_Overall_Evaluation', 'mcar')
+    BASE = os.path.join(RUN_ROOT, EVALUATION_DIR, 'mcar')
 else:
     BASE = os.path.join(ROOT, OUTPUT_ROOT, 'mcar')
 os.makedirs(BASE, exist_ok=True)
@@ -54,7 +59,7 @@ def little_mcar_test(df: pd.DataFrame) -> str:
                 codes = cat.cat.codes.replace(-1, np.nan)
                 df_enc[col] = codes
             except Exception:
-                pass
+                LOGGER.exception("Failed encoding column for MCAR test: %s", col)
 
     # Try pingouin if it exposes mcar
     try:
@@ -66,7 +71,7 @@ def little_mcar_test(df: pd.DataFrame) -> str:
             pval = float(res.loc[0, 'p'])
             return f"Little's MCAR: chi2={chi2:.3f}, dof={dof}, p={pval:.4g}\n"
     except Exception:
-        pass
+        LOGGER.exception("Little's MCAR test failed (pingouin path)")
 
     # Fallback approximate implementation
     try:

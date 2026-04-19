@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import os
 import csv
-import math
 from typing import Dict, Any
+
+from utils.logger import get_logger
+
+LOGGER = get_logger(__name__)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORTS = os.path.join(ROOT, 'exports', 'manuscript_exports')
@@ -50,8 +53,8 @@ def parse_mcar_line(txt: str):
                 elif token.startswith('p='):
                     parts['p_value'] = float(token.split('=')[1])
             return parts
-        except Exception:
-            pass
+        except Exception as e:
+            LOGGER.exception("Failed parsing MCAR stats line")
     return {'chi2': 'N/A', 'df': 'N/A', 'p_value': 'N/A'}
 
 
