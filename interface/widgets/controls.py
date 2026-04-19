@@ -842,16 +842,17 @@ def build_layout():
 
     summary_tab = QWidget()
     summary_layout = QVBoxLayout(summary_tab)
-    summary_layout.setContentsMargins(0, 0, 0, 0)
-    summary_layout.setSpacing(6)
+    summary_layout.setContentsMargins(8, 8, 8, 8)
+    summary_layout.setSpacing(4)
     w.results_summary_title = QLabel("Results Summary")
     w.results_summary_title.setObjectName("sectionTitle")
 
-    w.results_summary_text = QTextEdit()
-    w.results_summary_text.setReadOnly(True)
-    w.results_summary_text.setPlaceholderText("Best model summary will appear here after training.")
+    w.results_summary_label = QLabel("Best model summary will appear here after training.")
+    w.results_summary_label.setWordWrap(True)
+    w.results_summary_label.setObjectName("summaryLabel")
+    w.results_summary_label.setMaximumHeight(90)  # ~5 satır
     summary_layout.addWidget(w.results_summary_title)
-    summary_layout.addWidget(w.results_summary_text)
+    summary_layout.addWidget(w.results_summary_label)
 
     tables_tab = QWidget()
     tables_layout = QVBoxLayout(tables_tab)
@@ -1235,6 +1236,36 @@ def build_layout():
     w.right_panel.setVisible(False)
     run_card_layout.addWidget(w.right_panel)
 
+    # Basit QSS ile daha ferah ve sade bir görünüm
+    w.setStyleSheet('''
+        QLabel#summaryLabel {
+            font-size: 13px;
+            color: #222;
+            background: #fafbfc;
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+        QFrame#decisionCard {
+            background: #f5f7fa;
+            border-radius: 8px;
+            border: 1px solid #e0e4ea;
+        }
+        QTabWidget::pane {
+            border: 1px solid #e0e4ea;
+            border-radius: 8px;
+            background: #fff;
+        }
+        QTabBar::tab {
+            padding: 6px 16px;
+            min-width: 80px;
+            font-size: 13px;
+        }
+        QTabBar::tab:selected {
+            background: #eaf1fb;
+            color: #1a237e;
+            border-radius: 8px 8px 0 0;
+        }
+    ''')
     apply_translations(w)
     w.apply_translations = lambda: apply_translations(w)
     return w
