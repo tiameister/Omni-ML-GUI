@@ -202,12 +202,6 @@ def apply_translations(w):
     w.log_box.setPlaceholderText(
         tr("controls.results.logs_placeholder", default="Execution logs will appear here.")
     )
-    w.results_empty_label.setText(
-        tr(
-            "controls.results.empty",
-            default="No training result yet. Start training to unlock Results Hub.",
-        )
-    )
     w.results_save_button.setText(tr("controls.results.save_this_run", default="Save This Run"))
     w.results_save_button.setToolTip(
         tr("controls.results.save_tooltip", default="Persist current temporary run outputs into output/runs.")
@@ -751,200 +745,6 @@ def build_layout():
     w.progress_panel.setVisible(False)
     run_card_layout.addWidget(w.progress_panel)
 
-    # Results Hub (right panel with tabs and decision snapshot)
-    right_panel = QWidget(); right_panel.setObjectName("resultPanel")
-    right_layout = QVBoxLayout(right_panel)
-
-    kpi_row = QHBoxLayout()
-    ds_card, w.kpi_dataset_title, w.kpi_dataset_value = _make_kpi_card("Dataset", "Not loaded")
-    tg_card, w.kpi_target_title, w.kpi_target_value = _make_kpi_card("Target", "Not selected")
-    rn_card, w.kpi_run_title, w.kpi_run_value = _make_kpi_card("Run", "Idle")
-    kpi_row.addWidget(ds_card)
-    kpi_row.addWidget(tg_card)
-    kpi_row.addWidget(rn_card)
-    right_layout.addLayout(kpi_row)
-
-    # Results and statistics text areas and tables
-    w.result_box = QTextEdit(); w.result_box.setReadOnly(True)
-    w.result_box.setPlaceholderText("Training summary and model ranking will appear here.")
-    w.stats_box = QTextEdit(); w.stats_box.setReadOnly(True)
-    w.stats_box.setPlaceholderText("Statistical diagnostics will appear here.")
-    w.log_box = QTextEdit(); w.log_box.setReadOnly(True)
-    w.log_box.setPlaceholderText("Execution logs will appear here.")
-    # Compact tables
-    w.metrics_table = QTableView(); w.metrics_table.setObjectName("metricsTable")
-    w.stats_table = QTableView(); w.stats_table.setObjectName("statsTable")
-    w.metrics_table.setSortingEnabled(True)
-    w.stats_table.setSortingEnabled(True)
-    w.metrics_table.setAlternatingRowColors(True)
-    w.stats_table.setAlternatingRowColors(True)
-    w.metrics_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-    w.stats_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-    w.metrics_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-    w.stats_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-    w.metrics_table.verticalHeader().setVisible(False)
-    w.stats_table.verticalHeader().setVisible(False)
-    w.metrics_table.horizontalHeader().setStretchLastSection(True)
-    w.stats_table.horizontalHeader().setStretchLastSection(True)
-    # Monospace font and no wrap for readability
-    try:
-        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
-        mono.setPointSize(10)
-    except Exception:
-        mono = QFont("Monospace", 10)
-    w.result_box.setFont(mono)
-    w.result_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-    w.stats_box.setFont(mono)
-    w.stats_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-    # Results Hub
-    results_tab = QWidget()
-    results_layout = QVBoxLayout(results_tab)
-    results_layout.setContentsMargins(0, 0, 0, 0)
-    results_layout.setSpacing(8)
-
-    # Centered, styled empty state with icon
-    empty_state_row = QVBoxLayout()
-    empty_state_row.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
-    w.results_empty_icon = QLabel()
-    w.results_empty_icon.setPixmap(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(36, 36))
-    w.results_empty_icon.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-    w.results_empty_label = QLabel("No training result yet. Start training to unlock Results Hub.")
-    w.results_empty_label.setObjectName("emptyStateLabel")
-    w.results_empty_label.setWordWrap(True)
-    w.results_empty_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-    empty_state_row.addWidget(w.results_empty_icon)
-    empty_state_row.addWidget(w.results_empty_label)
-    results_layout.addLayout(empty_state_row)
-
-    # Save button moved to bottom right, under tabs
-    w.results_save_button = QPushButton("Save This Run")
-    w.results_save_button.setObjectName("accentButton")
-    w.results_save_button.setToolTip("Persist current temporary run outputs into output/runs.")
-    w.results_save_status = QLabel("Run not saved")
-    w.results_save_status.setObjectName("hintLabel")
-    w.results_save_status.setWordWrap(True)
-
-    w.results_decision_card = QFrame()
-    w.results_decision_card.setObjectName("decisionCard")
-    decision_layout = QGridLayout(w.results_decision_card)
-    decision_layout.setContentsMargins(10, 8, 10, 8)
-    decision_layout.setHorizontalSpacing(10)
-    decision_layout.setVerticalSpacing(4)
-    # Save button moved to right of title
-    decision_title_row = QHBoxLayout()
-    w.results_decision_title = QLabel("Run Decision Snapshot")
-    w.results_decision_title.setObjectName("sectionTitle")
-    decision_title_row.addWidget(w.results_decision_title)
-    decision_title_row.addStretch(1)
-    decision_title_row.addWidget(w.results_save_button)
-    decision_layout.addLayout(decision_title_row, 0, 0, 1, 2)
-    w.results_decision_best_label = QLabel("Best model:")
-    w.results_decision_best_value = QLabel("-")
-    w.results_decision_metrics_label = QLabel("Critical metrics:")
-    w.results_decision_metrics_value = QLabel("-")
-    w.results_decision_confidence_label = QLabel("Confidence:")
-    w.results_decision_confidence_value = QLabel("-")
-    w.results_decision_next_label = QLabel("Next action:")
-    w.results_decision_next_value = QLabel("-")
-    decision_layout.addWidget(w.results_decision_best_label, 1, 0)
-    decision_layout.addWidget(w.results_decision_best_value, 1, 1)
-    decision_layout.addWidget(w.results_decision_metrics_label, 2, 0)
-    decision_layout.addWidget(w.results_decision_metrics_value, 2, 1)
-    decision_layout.addWidget(w.results_decision_confidence_label, 3, 0)
-    decision_layout.addWidget(w.results_decision_confidence_value, 3, 1)
-    decision_layout.addWidget(w.results_decision_next_label, 4, 0)
-    decision_layout.addWidget(w.results_decision_next_value, 4, 1)
-    results_layout.addWidget(w.results_decision_card)
-
-    w.results_tabs = QTabWidget()
-    w.results_tabs.setDocumentMode(False)
-
-    summary_tab = QWidget()
-    summary_layout = QVBoxLayout(summary_tab)
-    summary_layout.setContentsMargins(8, 8, 8, 8)
-    summary_layout.setSpacing(4)
-    w.results_summary_title = QLabel("Results Summary")
-    w.results_summary_title.setObjectName("sectionTitle")
-
-    w.results_summary_label = QLabel("Best model summary will appear here after training.")
-    w.results_summary_label.setWordWrap(True)
-    w.results_summary_label.setObjectName("summaryLabel")
-    w.results_summary_label.setMaximumHeight(90)  # ~5 satır
-    summary_layout.addWidget(w.results_summary_title)
-    summary_layout.addWidget(w.results_summary_label)
-
-    tables_tab = QWidget()
-    tables_layout = QVBoxLayout(tables_tab)
-    tables_layout.setContentsMargins(0, 0, 0, 0)
-    tables_layout.setSpacing(6)
-    tables_layout.addWidget(w.metrics_table)
-    tables_layout.addWidget(w.stats_table)
-
-    figures_tab = QWidget()
-    figures_layout = QVBoxLayout(figures_tab)
-    figures_layout.setContentsMargins(0, 0, 0, 0)
-    figures_layout.setSpacing(6)
-    figures_filter_row = QHBoxLayout()
-    w.figures_model_label = QLabel("Model:")
-    figures_filter_row.addWidget(w.figures_model_label)
-    w.figures_model_filter = NoWheelComboBox()
-    w.figures_model_filter.addItem("All models", userData="all")
-    figures_filter_row.addWidget(w.figures_model_filter, 1)
-    w.figures_group_label = QLabel("Group:")
-    figures_filter_row.addWidget(w.figures_group_label)
-    w.figures_category_filter = NoWheelComboBox()
-    w.figures_category_filter.addItem("All groups", userData="all")
-    figures_filter_row.addWidget(w.figures_category_filter, 1)
-    figures_layout.addLayout(figures_filter_row)
-    w.figures_list = QListWidget()
-    w.figures_list.setObjectName("resultsFigureList")
-    w.figures_list.setAlternatingRowColors(True)
-    w.figures_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-    w.figures_img = QLabel()
-    w.figures_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    w.figures_img.setMinimumHeight(220)
-    w.figures_img.setScaledContents(False)
-    figures_layout.addWidget(w.figures_list)
-    figures_layout.addWidget(w.figures_img)
-
-    shap_tab = QWidget()
-    shap_layout = QVBoxLayout(shap_tab)
-    shap_layout.setContentsMargins(0, 0, 0, 0)
-    shap_layout.setSpacing(6)
-    shap_filter_row = QHBoxLayout()
-    w.shap_model_label = QLabel("Model:")
-    shap_filter_row.addWidget(w.shap_model_label)
-    w.shap_model_filter = NoWheelComboBox()
-    w.shap_model_filter.addItem("All models", userData="all")
-    shap_filter_row.addWidget(w.shap_model_filter, 1)
-    shap_layout.addLayout(shap_filter_row)
-    w.shap_list = QListWidget()
-    w.shap_list.setObjectName("resultsShapList")
-    w.shap_list.setAlternatingRowColors(True)
-    w.shap_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-    w.shap_img = QLabel()
-    w.shap_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    w.shap_img.setMinimumHeight(220)
-    w.shap_img.setScaledContents(False)
-    shap_layout.addWidget(w.shap_list)
-    shap_layout.addWidget(w.shap_img)
-
-    w.results_tabs.addTab(summary_tab, "Summary")
-    w.results_tabs.addTab(tables_tab, "Tables")
-    w.results_tabs.addTab(figures_tab, "Figures")
-    w.results_tabs.addTab(shap_tab, "SHAP")
-    results_layout.addWidget(w.results_tabs)
-    # Save status label at the very bottom, right-aligned
-    save_status_row = QHBoxLayout()
-    save_status_row.addStretch(1)
-    save_status_row.addWidget(w.results_save_status)
-    results_layout.addLayout(save_status_row)
-
-    right_layout.addWidget(results_tab)
-    w.right_panel = right_panel
-    w.right_panel.setVisible(True)
-    run_card_layout.addWidget(w.right_panel)
-
     # Hidden action buttons: exposed via top menu for a cleaner workflow surface
     w.customize_plots_btn = QPushButton("Customize Plots…")
     w.shap_settings_btn = QPushButton("SHAP Settings…")
@@ -1051,19 +851,12 @@ def build_layout():
     w.result_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
     w.stats_box.setFont(mono)
     w.stats_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-    tabs = QTabWidget()
-    tabs.setDocumentMode(True)
 
     # Results Hub
     results_tab = QWidget()
     results_layout = QVBoxLayout(results_tab)
     results_layout.setContentsMargins(0, 0, 0, 0)
     results_layout.setSpacing(8)
-
-    w.results_empty_label = QLabel("No training result yet. Start training to unlock Results Hub.")
-    w.results_empty_label.setObjectName("hintLabel")
-    w.results_empty_label.setWordWrap(True)
-    results_layout.addWidget(w.results_empty_label)
 
     w.results_save_row = QWidget()
     save_row_layout = QHBoxLayout(w.results_save_row)
@@ -1122,6 +915,9 @@ def build_layout():
     w.results_summary_text.setPlaceholderText("Best model summary will appear here after training.")
     summary_layout.addWidget(w.results_summary_title)
     summary_layout.addWidget(w.results_summary_text)
+    # Idle: no duplicate placeholder — summary body is hidden until a run produces outputs.
+    w.results_summary_title.setVisible(False)
+    w.results_summary_text.setVisible(False)
 
     tables_tab = QWidget()
     tables_layout = QVBoxLayout(tables_tab)
@@ -1184,6 +980,7 @@ def build_layout():
     w.results_tabs.addTab(figures_tab, "Figures")
     w.results_tabs.addTab(shap_tab, "SHAP")
     results_layout.addWidget(w.results_tabs)
+    w.results_tabs.setEnabled(False)
 
     console_tab = QWidget(); ct_layout = QVBoxLayout(console_tab); ct_layout.addWidget(w.log_box)
     notifications_tab = QWidget(); nt_layout = QVBoxLayout(notifications_tab)
@@ -1262,19 +1059,6 @@ def build_layout():
 
     # Basit QSS ile daha ferah ve sade bir görünüm
     w.setStyleSheet('''
-        QLabel#summaryLabel {
-            font-size: 13px;
-            color: #222;
-            background: #fafbfc;
-            border-radius: 6px;
-            padding: 8px 10px;
-        }
-        QLabel#emptyStateLabel {
-            font-size: 15px;
-            color: #888;
-            margin-top: 8px;
-            margin-bottom: 8px;
-        }
         QFrame#decisionCard {
             background: #f5f7fa;
             border-radius: 8px;

@@ -2717,8 +2717,12 @@ class MLTrainerApp(QMainWindow):
 
         if hasattr(c, "results_tabs"):
             c.results_tabs.setEnabled(has_result)
-        if hasattr(c, "results_empty_label"):
-            c.results_empty_label.setVisible(not has_result)
+        if hasattr(c, "results_summary_title"):
+            c.results_summary_title.setVisible(has_result)
+        if hasattr(c, "results_summary_text"):
+            c.results_summary_text.setVisible(has_result)
+            if not has_result:
+                c.results_summary_text.clear()
         if hasattr(c, "results_decision_card"):
             # Keep decision card pinned as a stable anchor for result interpretation.
             c.results_decision_card.setVisible(True)
