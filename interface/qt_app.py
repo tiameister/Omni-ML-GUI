@@ -21,9 +21,20 @@ from PySide6.QtWidgets import (
     QStyle,
 )
 from PySide6.QtGui import QPalette, QColor, QPixmap, QIcon, QShortcut, QKeySequence, QAction
-from PySide6.QtCore import Qt, QUrl, QSettings, QCoreApplication, QTimer
+from PySide6.QtCore import (
+    Qt,
+    QUrl,
+    QSettings,
+    QCoreApplication,
+    QTimer,
+    QThread,
+    Signal,
+    QObject,
+    QMetaObject,
+    Q_ARG,
+    Slot,
+)
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtCore import QThread, Signal, QObject
 
 from interface.widgets.startup import StartupDialog
 from interface.logic.theme import theme_manager
@@ -77,13 +88,9 @@ def _pd():
 class _TrainWorker(QObject):
     """
     Worker class for running model training in a background thread.
-    Handles progress, error, and result signals for the training process.
+    Progress/log marshals to the GUI via QMetaObject; completion uses pending data +
+    invokeMethod (reliable with PySide; nested Python slots + Signal(object,...) are not).
     """
-    finished = Signal(object, object, object, object, object, float)
-    error = Signal(str)
-    progress = Signal(int, int)
-    plot_progress = Signal(int, int)
-    log = Signal(str)
 
     def __init__(
         self,
@@ -98,9 +105,11 @@ class _TrainWorker(QObject):
         persist_outputs,
         feature_value_labels,
         shap_settings,
+        gui_app=None,
         parent=None,
     ):
         super().__init__(parent)
+        self._gui_app = gui_app
         self.effective_state = effective_state
         self.selected_models = selected_models
         self.selected_plots = selected_plots
@@ -119,15 +128,52 @@ class _TrainWorker(QObject):
             # Import lazily so GUI startup doesn't pay sklearn/pandas cost.
             from interface.logic.training import run_training as run_training_ui
 
+            gui = self._gui_app
+
+            # sklearn/joblib may call these callbacks from pool threads (not this QThread).
+            # Emitting QObject signals from arbitrary threads is unsafe; marshal to the GUI
+            # thread via QMetaObject.invokeMethod (requires @Slot targets on the main window).
+            def _safe_progress(current: int, total: int) -> None:
+                if gui is None:
+                    return
+                QMetaObject.invokeMethod(
+                    gui,
+                    "_update_progress",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(int, int(current)),
+                    Q_ARG(int, int(total)),
+                )
+
+            def _safe_plot_progress(current: int, total: int) -> None:
+                if gui is None:
+                    return
+                QMetaObject.invokeMethod(
+                    gui,
+                    "_update_plot_progress",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(int, int(current)),
+                    Q_ARG(int, int(total)),
+                )
+
+            def _safe_log(msg: str) -> None:
+                if gui is None:
+                    return
+                QMetaObject.invokeMethod(
+                    gui,
+                    "_append_log",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, str(msg)),
+                )
+
             metrics_df, fitted_models, stats_df, stats_summary_df, out_info = run_training_ui(
                 self.effective_state,
                 self.selected_models,
                 self.selected_plots,
                 cv_mode=self.cv_mode,
                 cv_folds=self.cv_folds,
-                external_progress_cb=self.progress.emit,
-                external_plot_progress_cb=self.plot_progress.emit,
-                external_log_cb=self.log.emit,
+                external_progress_cb=_safe_progress,
+                external_plot_progress_cb=_safe_plot_progress,
+                external_log_cb=_safe_log,
                 should_cancel=self.should_cancel_fn,
                 run_id=self.run_id,
                 dataset_label=self.dataset_label,
@@ -136,10 +182,30 @@ class _TrainWorker(QObject):
                 shap_settings=self.shap_settings,
             )
             elapsed = time.time() - t0
-            self.finished.emit(metrics_df, fitted_models, stats_df, stats_summary_df, out_info, elapsed)
+            if gui is not None:
+                gui._pending_training_result = (
+                    metrics_df,
+                    fitted_models,
+                    stats_df,
+                    stats_summary_df,
+                    out_info,
+                    elapsed,
+                )
+                QMetaObject.invokeMethod(
+                    gui,
+                    "_on_training_worker_finished",
+                    Qt.ConnectionType.QueuedConnection,
+                )
         except Exception as e:
             LOGGER.exception("Training worker failed")
-            self.error.emit(str(e))
+            gui = self._gui_app
+            if gui is not None:
+                gui._pending_training_error = str(e)
+                QMetaObject.invokeMethod(
+                    gui,
+                    "_on_training_worker_error",
+                    Qt.ConnectionType.QueuedConnection,
+                )
 
 
 class _DatasetLoadWorker(QObject):
@@ -198,6 +264,10 @@ class MLTrainerApp(QMainWindow):
         self._feedback_latest_event = tr("controls.feedback.latest_none", default="No recent event")
         self._feedback_jobs = tr("controls.feedback.jobs_idle", default="No active jobs")
         self._has_prompted_for_studio = False
+        # Training worker stores results here; completion runs on the GUI thread via
+        # QMetaObject.invokeMethod (avoids PySide issues with QueuedConnection + nested slots).
+        self._pending_training_result: tuple | None = None
+        self._pending_training_error: str | None = None
 
         self._restore_language_preference()
         self._restore_theme_preference()
@@ -3750,6 +3820,164 @@ class MLTrainerApp(QMainWindow):
         self._capture_snapshot(clear_redo=True)
         return True
 
+    @Slot()
+    def _on_training_worker_finished(self):
+        """Runs on the GUI thread after training (see _TrainWorker.run)."""
+        pack = self._pending_training_result
+        self._pending_training_result = None
+        if pack is None:
+            return
+        metrics_df, _fitted_models, stats_df, stats_summary_df, out_info, elapsed = pack
+        c = self.controls
+        c.progress_phase_label.setText(tr("status.completed", default="Completed"))
+        c.progress_timing_label.setText(
+            tr(
+                "status.elapsed_eta_zero",
+                default="Elapsed: {elapsed} | ETA: 0s",
+                elapsed=self._format_duration(elapsed),
+            )
+        )
+        c.cancel_button.setEnabled(False)
+        c.cancel_button.setVisible(False)
+        self._set_controls_for_run_state(False)
+        self._on_cv_mode_changed(c.cv_mode_combo.currentText())
+        self.statusBar().showMessage(tr("status.training_complete_sec", default="Training complete in {seconds:.1f}s", seconds=elapsed))
+        c.kpi_run_value.setText(tr("status.kpi.done_sec", default="Done ({seconds:.1f}s)", seconds=elapsed))
+        self._set_feedback_focus(
+            now=tr("status.feedback.now_training_completed", default="Training completed"),
+            next_step=tr("status.feedback.next_review_results", default="Review decision summary and diagnostics"),
+            blockers=tr("controls.feedback.blockers_none", default="None"),
+        )
+
+        try:
+            self._render_results_from_run(metrics_df, stats_summary_df, out_info)
+            if hasattr(c, "results_tabs"):
+                c.results_tabs.setCurrentIndex(0)
+        except Exception:
+            LOGGER.exception("Failed to render results from training run")
+
+        self._thread.quit()
+        self._thread.wait()
+
+        try:
+            total_plots = c.plot_progress_bar.maximum()
+            if total_plots > 0:
+                c.plot_progress_bar.setValue(total_plots)
+                c.plot_progress_bar.setVisible(True)
+                self.statusBar().showMessage(tr("status.plots_ready", default="Plots and extra analyses are ready"))
+            c.progress_train_stats_label.setText(
+                tr("status.done_duration", default="done ({duration})", duration=self._format_duration(elapsed))
+            )
+            c.progress_plot_stats_label.setText(
+                f"{c.plot_progress_bar.value()}/{max(c.plot_progress_bar.maximum(), 1)} (100%)"
+                if c.plot_progress_bar.maximum() > 0 else "0/0 (0%)"
+            )
+        except Exception:
+            LOGGER.exception("Failed updating completion UI")
+
+        running_job = self._job_by_id(self._active_job_id)
+        if running_job is not None:
+            running_job["status"] = "Completed"
+            running_job["finished_at"] = time.time()
+            running_job["elapsed"] = float(elapsed)
+            running_job["message"] = tr(
+                "jobs.completed_in",
+                default="Completed in {duration}",
+                duration=self._format_duration(elapsed),
+            )
+            running_job["error"] = ""
+
+        self._active_job_id = None
+        self._cancelled = False
+        self._refresh_job_table()
+        self._sync_menu_actions()
+        self._push_notification(
+            "success",
+            tr("notifications.training_completed", default="Training completed in {seconds:.1f}s.", seconds=elapsed),
+        )
+        self._set_results_dialog_visible(True)
+        if any(j.get("status") == "Queued" for j in self._jobs):
+            self._start_next_queued_job()
+
+    @Slot()
+    def _on_training_worker_error(self):
+        """Runs on the GUI thread when training raises (see _TrainWorker.run)."""
+        msg = self._pending_training_error
+        self._pending_training_error = None
+        if msg is None:
+            return
+        c = self.controls
+        elapsed = (time.monotonic() - self._run_started_at) if self._run_started_at else None
+        was_cancelled = self._cancelled or "cancelled by user" in str(msg).strip().lower()
+
+        c.progress_phase_label.setText(
+            tr("status.cancelled", default="Cancelled") if was_cancelled else tr("status.failed", default="Failed")
+        )
+        c.progress_timing_label.setText(
+            tr(
+                "status.elapsed_eta_unknown",
+                default="Elapsed: {elapsed} | ETA: --",
+                elapsed=self._format_duration(elapsed),
+            )
+        )
+        c.cancel_button.setEnabled(False)
+        c.cancel_button.setVisible(False)
+        self._set_controls_for_run_state(False)
+        self._on_cv_mode_changed(c.cv_mode_combo.currentText())
+        c.kpi_run_value.setText(
+            tr("status.cancelled", default="Cancelled") if was_cancelled else tr("status.failed", default="Failed")
+        )
+        self._set_feedback_focus(
+            now=(
+                tr("status.feedback.now_cancelled", default="Run cancelled")
+                if was_cancelled
+                else tr("status.feedback.now_failed", default="Run failed")
+            ),
+            next_step=(
+                tr("status.feedback.next_start_training", default="Start training")
+                if was_cancelled
+                else tr("status.feedback.next_retry_when_ready", default="Adjust settings and retry")
+            ),
+            blockers=(
+                tr("controls.feedback.blockers_none", default="None")
+                if was_cancelled
+                else tr("status.feedback.blocker_training_failed", default="Training error requires attention")
+            ),
+        )
+
+        if not was_cancelled:
+            QMessageBox.warning(self, tr("dialogs.training_error.title", default="Training Error"), msg)
+
+        self._thread.quit()
+        self._thread.wait()
+
+        running_job = self._job_by_id(self._active_job_id)
+        if running_job is not None:
+            running_job["status"] = "Cancelled" if was_cancelled else "Failed"
+            running_job["finished_at"] = time.time()
+            running_job["elapsed"] = float(elapsed) if elapsed is not None else None
+            running_job["message"] = (
+                tr("jobs.cancelled_by_user", default="Cancelled by user")
+                if was_cancelled
+                else tr("jobs.run_failed", default="Run failed")
+            )
+            running_job["error"] = str(msg)
+
+        self._active_job_id = None
+        self._cancelled = False
+        self._refresh_job_table()
+        self._sync_menu_actions()
+
+        if was_cancelled:
+            self._push_notification("warning", tr("notifications.training_cancelled", default="Training cancelled by user."))
+            self.statusBar().showMessage(
+                tr("status.current_job_cancelled_waiting", default="Current job cancelled. Queued jobs are waiting.")
+            )
+        else:
+            self._push_notification("error", tr("notifications.training_failed", default="Training failed: {error}", error=msg))
+            if any(j.get("status") == "Queued" for j in self._jobs):
+                self._start_next_queued_job()
+
     def _on_train(self):
         c = self.controls
         
@@ -3977,166 +4205,20 @@ class MLTrainerApp(QMainWindow):
         self._worker = _TrainWorker(
             effective_state, selected_models, selected_plots, cv_mode, cv_folds,
             lambda: getattr(self, '_cancelled', False),
-            run_id, dataset_label, persist_outputs, feature_value_labels, shap_settings
+            run_id, dataset_label, persist_outputs, feature_value_labels, shap_settings,
+            gui_app=self,
         )
         self._worker.moveToThread(self._thread)
         self._thread.finished.connect(self._thread.deleteLater)
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._worker.finished.connect(self._thread.quit)
-        self._worker.error.connect(self._worker.deleteLater)
+        # Do NOT connect deleteLater/thread.quit to worker signals before the main-thread
+        # completion handlers. deleteLater runs synchronously during emit; an early
+        # thread.quit is queued before QueuedConnection slots — the worker can be destroyed
+        # and Qt drops the still-queued UI slots, so results never render.
         self._thread.started.connect(self._worker.run)
-        self._worker.progress.connect(self._update_progress)
-        self._worker.plot_progress.connect(self._update_plot_progress)
-        self._worker.log.connect(self._append_log)
+        # Progress/log UI updates are driven via QMetaObject.invokeMethod from the worker
+        # (see _TrainWorker.run) so callbacks are safe when joblib calls them from pool threads.
+        # Training completion uses _pending_training_result + _on_training_worker_finished (invokeMethod).
 
-        def on_finish(metrics_df, fitted_models, stats_df, stats_summary_df, out_info, elapsed):
-            c.progress_phase_label.setText(tr("status.completed", default="Completed"))
-            c.progress_timing_label.setText(
-                tr(
-                    "status.elapsed_eta_zero",
-                    default="Elapsed: {elapsed} | ETA: 0s",
-                    elapsed=self._format_duration(elapsed),
-                )
-            )
-            c.cancel_button.setEnabled(False)
-            c.cancel_button.setVisible(False)
-            self._set_controls_for_run_state(False)
-            self._on_cv_mode_changed(c.cv_mode_combo.currentText())
-            self.statusBar().showMessage(tr("status.training_complete_sec", default="Training complete in {seconds:.1f}s", seconds=elapsed))
-            c.kpi_run_value.setText(tr("status.kpi.done_sec", default="Done ({seconds:.1f}s)", seconds=elapsed))
-            self._set_feedback_focus(
-                now=tr("status.feedback.now_training_completed", default="Training completed"),
-                next_step=tr("status.feedback.next_review_results", default="Review decision summary and diagnostics"),
-                blockers=tr("controls.feedback.blockers_none", default="None"),
-            )
-
-            try:
-                self._render_results_from_run(metrics_df, stats_summary_df, out_info)
-                # Focus results hub after successful completion.
-                
-                if hasattr(c, "results_tabs"):
-                    c.results_tabs.setCurrentIndex(0)
-            except Exception:
-                LOGGER.exception("Failed to render results from training run")
-
-            self._thread.quit()
-            self._thread.wait()
-
-            try:
-                total_plots = c.plot_progress_bar.maximum()
-                if total_plots > 0:
-                    c.plot_progress_bar.setValue(total_plots)
-                    c.plot_progress_bar.setVisible(True)
-                    self.statusBar().showMessage(tr("status.plots_ready", default="Plots and extra analyses are ready"))
-                c.progress_train_stats_label.setText(
-                    tr("status.done_duration", default="done ({duration})", duration=self._format_duration(elapsed))
-                )
-                c.progress_plot_stats_label.setText(
-                    f"{c.plot_progress_bar.value()}/{max(c.plot_progress_bar.maximum(), 1)} (100%)"
-                    if c.plot_progress_bar.maximum() > 0 else "0/0 (0%)"
-                )
-            except Exception:
-                LOGGER.exception("Failed updating completion UI")
-
-            running_job = self._job_by_id(self._active_job_id)
-            if running_job is not None:
-                running_job["status"] = "Completed"
-                running_job["finished_at"] = time.time()
-                running_job["elapsed"] = float(elapsed)
-                running_job["message"] = tr(
-                    "jobs.completed_in",
-                    default="Completed in {duration}",
-                    duration=self._format_duration(elapsed),
-                )
-                running_job["error"] = ""
-
-            self._active_job_id = None
-            self._cancelled = False
-            self._refresh_job_table()
-            self._sync_menu_actions()
-            self._push_notification(
-                "success",
-                tr("notifications.training_completed", default="Training completed in {seconds:.1f}s.", seconds=elapsed),
-            )
-            self._set_results_dialog_visible(True)
-            if any(j.get("status") == "Queued" for j in self._jobs):
-                self._start_next_queued_job()
-
-        self._worker.finished.connect(on_finish)
-
-        def on_error(msg: str):
-            elapsed = (time.monotonic() - self._run_started_at) if self._run_started_at else None
-            was_cancelled = self._cancelled or "cancelled by user" in str(msg).strip().lower()
-
-            c.progress_phase_label.setText(
-                tr("status.cancelled", default="Cancelled") if was_cancelled else tr("status.failed", default="Failed")
-            )
-            c.progress_timing_label.setText(
-                tr(
-                    "status.elapsed_eta_unknown",
-                    default="Elapsed: {elapsed} | ETA: --",
-                    elapsed=self._format_duration(elapsed),
-                )
-            )
-            c.cancel_button.setEnabled(False)
-            c.cancel_button.setVisible(False)
-            self._set_controls_for_run_state(False)
-            self._on_cv_mode_changed(c.cv_mode_combo.currentText())
-            c.kpi_run_value.setText(
-                tr("status.cancelled", default="Cancelled") if was_cancelled else tr("status.failed", default="Failed")
-            )
-            self._set_feedback_focus(
-                now=(
-                    tr("status.feedback.now_cancelled", default="Run cancelled")
-                    if was_cancelled
-                    else tr("status.feedback.now_failed", default="Run failed")
-                ),
-                next_step=(
-                    tr("status.feedback.next_start_training", default="Start training")
-                    if was_cancelled
-                    else tr("status.feedback.next_retry_when_ready", default="Adjust settings and retry")
-                ),
-                blockers=(
-                    tr("controls.feedback.blockers_none", default="None")
-                    if was_cancelled
-                    else tr("status.feedback.blocker_training_failed", default="Training error requires attention")
-                ),
-            )
-
-            if not was_cancelled:
-                QMessageBox.warning(self, tr("dialogs.training_error.title", default="Training Error"), msg)
-
-            self._thread.quit()
-            self._thread.wait()
-
-            running_job = self._job_by_id(self._active_job_id)
-            if running_job is not None:
-                running_job["status"] = "Cancelled" if was_cancelled else "Failed"
-                running_job["finished_at"] = time.time()
-                running_job["elapsed"] = float(elapsed) if elapsed is not None else None
-                running_job["message"] = (
-                    tr("jobs.cancelled_by_user", default="Cancelled by user")
-                    if was_cancelled
-                    else tr("jobs.run_failed", default="Run failed")
-                )
-                running_job["error"] = str(msg)
-
-            self._active_job_id = None
-            self._cancelled = False
-            self._refresh_job_table()
-            self._sync_menu_actions()
-
-            if was_cancelled:
-                self._push_notification("warning", tr("notifications.training_cancelled", default="Training cancelled by user."))
-                self.statusBar().showMessage(
-                    tr("status.current_job_cancelled_waiting", default="Current job cancelled. Queued jobs are waiting.")
-                )
-            else:
-                self._push_notification("error", tr("notifications.training_failed", default="Training failed: {error}", error=msg))
-                if any(j.get("status") == "Queued" for j in self._jobs):
-                    self._start_next_queued_job()
-
-        self._worker.error.connect(on_error)
         self._thread.start()
 
     def _on_open_output_folder(self):
@@ -4249,6 +4331,7 @@ class MLTrainerApp(QMainWindow):
             # Fallback to built-in About dialog when a local guide is absent.
             self._on_about()
 
+    @Slot(int, int)
     def _update_progress(self, current, total):
         c = self.controls
         c.progress_bar.setMaximum(total)
@@ -4273,8 +4356,8 @@ class MLTrainerApp(QMainWindow):
                 tr("status.training_progress", default="Training progress: {current}/{total} ({pct}%)", current=current, total=total, pct=pct)
             )
             c.kpi_run_value.setText(tr("status.kpi.running_pct", default="Running ({pct}%)", pct=pct))
-        QApplication.processEvents()
 
+    @Slot(int, int)
     def _update_plot_progress(self, current, total):
         c = self.controls
         if total <= 0:
@@ -4301,8 +4384,8 @@ class MLTrainerApp(QMainWindow):
         self.statusBar().showMessage(
             tr("status.generating_plots", default="Generating plots... {current}/{total} ({pct}%)", current=current, total=total, pct=pct)
         )
-        QApplication.processEvents()
 
+    @Slot(str)
     def _append_log(self, text: str):
         c = self.controls
         c.log_box.append(text)

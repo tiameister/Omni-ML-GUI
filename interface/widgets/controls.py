@@ -681,13 +681,25 @@ def build_layout():
     w.status_label.setProperty("severity", "neutral")
     w.status_label.setVisible(False)
 
-    action_row = QHBoxLayout()
-    action_row.setSpacing(10)
-    action_row.addStretch(1)
-    action_row.addWidget(w.train_button, 0)
-    action_row.addWidget(w.runtime_hint_label, 0, Qt.AlignmentFlag.AlignVCenter)
-    action_row.addWidget(w.cancel_button, 0)
-    run_card_layout.addLayout(action_row)
+    # Group training controls in a frame for visual clarity
+    train_controls_frame = QFrame()
+    train_controls_frame.setObjectName("trainControlsFrame")
+    train_controls_layout = QHBoxLayout(train_controls_frame)
+    train_controls_layout.setContentsMargins(8, 8, 8, 8)
+    train_controls_layout.setSpacing(10)
+    train_controls_layout.addWidget(w.persist_output_checkbox)
+    train_controls_layout.addStretch(1)
+    train_controls_layout.addWidget(w.train_button)
+    train_controls_layout.addWidget(w.runtime_hint_label, 0, Qt.AlignmentFlag.AlignVCenter)
+    train_controls_layout.addWidget(w.cancel_button)
+    run_card_layout.addWidget(train_controls_frame)
+
+    # Divider between actions and results
+    divider = QFrame()
+    divider.setFrameShape(QFrame.Shape.HLine)
+    divider.setFrameShadow(QFrame.Shadow.Sunken)
+    divider.setStyleSheet("margin-top: 12px; margin-bottom: 12px; background: #e0e4ea; height: 2px;")
+    run_card_layout.addWidget(divider)
     w.progress_panel = QFrame()
     w.progress_panel.setObjectName("progressPanel")
     progress_layout = QVBoxLayout(w.progress_panel)
@@ -790,24 +802,27 @@ def build_layout():
     results_layout.setContentsMargins(0, 0, 0, 0)
     results_layout.setSpacing(8)
 
+    # Centered, styled empty state with icon
+    empty_state_row = QVBoxLayout()
+    empty_state_row.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+    w.results_empty_icon = QLabel()
+    w.results_empty_icon.setPixmap(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(36, 36))
+    w.results_empty_icon.setAlignment(Qt.AlignmentFlag.AlignHCenter)
     w.results_empty_label = QLabel("No training result yet. Start training to unlock Results Hub.")
-    w.results_empty_label.setObjectName("hintLabel")
+    w.results_empty_label.setObjectName("emptyStateLabel")
     w.results_empty_label.setWordWrap(True)
-    results_layout.addWidget(w.results_empty_label)
+    w.results_empty_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+    empty_state_row.addWidget(w.results_empty_icon)
+    empty_state_row.addWidget(w.results_empty_label)
+    results_layout.addLayout(empty_state_row)
 
-    w.results_save_row = QWidget()
-    save_row_layout = QHBoxLayout(w.results_save_row)
-    save_row_layout.setContentsMargins(0, 0, 0, 0)
-    save_row_layout.setSpacing(6)
+    # Save button moved to bottom right, under tabs
     w.results_save_button = QPushButton("Save This Run")
     w.results_save_button.setObjectName("accentButton")
     w.results_save_button.setToolTip("Persist current temporary run outputs into output/runs.")
     w.results_save_status = QLabel("Run not saved")
     w.results_save_status.setObjectName("hintLabel")
     w.results_save_status.setWordWrap(True)
-    save_row_layout.addWidget(w.results_save_button)
-    save_row_layout.addWidget(w.results_save_status, 1)
-    results_layout.addWidget(w.results_save_row)
 
     w.results_decision_card = QFrame()
     w.results_decision_card.setObjectName("decisionCard")
@@ -815,8 +830,14 @@ def build_layout():
     decision_layout.setContentsMargins(10, 8, 10, 8)
     decision_layout.setHorizontalSpacing(10)
     decision_layout.setVerticalSpacing(4)
+    # Save button moved to right of title
+    decision_title_row = QHBoxLayout()
     w.results_decision_title = QLabel("Run Decision Snapshot")
     w.results_decision_title.setObjectName("sectionTitle")
+    decision_title_row.addWidget(w.results_decision_title)
+    decision_title_row.addStretch(1)
+    decision_title_row.addWidget(w.results_save_button)
+    decision_layout.addLayout(decision_title_row, 0, 0, 1, 2)
     w.results_decision_best_label = QLabel("Best model:")
     w.results_decision_best_value = QLabel("-")
     w.results_decision_metrics_label = QLabel("Critical metrics:")
@@ -825,8 +846,6 @@ def build_layout():
     w.results_decision_confidence_value = QLabel("-")
     w.results_decision_next_label = QLabel("Next action:")
     w.results_decision_next_value = QLabel("-")
-
-    decision_layout.addWidget(w.results_decision_title, 0, 0, 1, 2)
     decision_layout.addWidget(w.results_decision_best_label, 1, 0)
     decision_layout.addWidget(w.results_decision_best_value, 1, 1)
     decision_layout.addWidget(w.results_decision_metrics_label, 2, 0)
@@ -915,6 +934,11 @@ def build_layout():
     w.results_tabs.addTab(figures_tab, "Figures")
     w.results_tabs.addTab(shap_tab, "SHAP")
     results_layout.addWidget(w.results_tabs)
+    # Save status label at the very bottom, right-aligned
+    save_status_row = QHBoxLayout()
+    save_status_row.addStretch(1)
+    save_status_row.addWidget(w.results_save_status)
+    results_layout.addLayout(save_status_row)
 
     right_layout.addWidget(results_tab)
     w.right_panel = right_panel
@@ -1245,8 +1269,19 @@ def build_layout():
             border-radius: 6px;
             padding: 8px 10px;
         }
+        QLabel#emptyStateLabel {
+            font-size: 15px;
+            color: #888;
+            margin-top: 8px;
+            margin-bottom: 8px;
+        }
         QFrame#decisionCard {
             background: #f5f7fa;
+            border-radius: 8px;
+            border: 1px solid #e0e4ea;
+        }
+        QFrame#trainControlsFrame {
+            background: #f7fafd;
             border-radius: 8px;
             border: 1px solid #e0e4ea;
         }
