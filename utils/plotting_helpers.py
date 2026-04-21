@@ -357,9 +357,6 @@ def top_raw_features_by_shap(
 
 
 def save_bar(fig_path: str, labels: list[str], values: list[float], title: str, xlabel: str):
-    import seaborn as sns
-    import matplotlib.pyplot as plt
-    import numpy as np
     sns.set_style('whitegrid')
     fig_h = max(3.0, 0.5 * len(labels))
     fig, ax = plt.subplots(figsize=(10, fig_h))

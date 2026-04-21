@@ -194,7 +194,6 @@ def run_training(
         plot_residuals,
     )
     from evaluation.metrics import get_feature_names_from_pipe, save_model_metrics, save_cv_splits
-    from features.feature_engineering import apply_feature_engineering
     from features.preprocess import build_preprocessor
     from models.train import train_and_evaluate
 

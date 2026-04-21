@@ -173,7 +173,8 @@ _OPTIONAL_ANALYSIS_OPTIONS = [
 
 
 def _scripts_root_dir() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "scripts"))
+    from utils.paths import get_project_root
+    return str(get_project_root() / "scripts")
 
 
 @lru_cache(maxsize=1)
@@ -228,10 +229,6 @@ def get_recommended_optional_script_labels() -> set[str]:
         if bool(opt.get("recommended")) and str(opt.get("label", "")).strip() in available
     }
 
-
-def is_optional_script_option(name: str) -> bool:
-    _, _, label_to_filename = _optional_script_catalog_data()
-    return name in label_to_filename
 
 def create_model_checkboxes():
     """

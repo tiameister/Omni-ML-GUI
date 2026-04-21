@@ -1,9 +1,9 @@
-import os
 import logging
 import sys
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPalette
 from PySide6.QtCore import QSettings
+from utils.paths import get_project_root
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,18 +41,16 @@ class ThemeManager:
         elif theme_name == "system":
             is_dark = self._is_system_dark_mode(app)
             
-        base_dir = os.path.dirname(os.path.dirname(__file__))
-        
         # Keep macOS native look; use Fusion on other OSes for consistency.
         if sys.platform != "darwin":
             try:
                 app.setStyle("Fusion")
             except Exception:
                 pass
-        
-        # 2. QSS yükleme
+
+        # QSS loading — uses get_project_root() for PyInstaller compatibility.
         qss_filename = "dark_style.qss" if is_dark else "style.qss"
-        qss_path = os.path.join(base_dir, "style", qss_filename)
+        qss_path = str(get_project_root() / "interface" / "style" / qss_filename)
         
         try:
             with open(qss_path, "r", encoding="utf-8") as f:

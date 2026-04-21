@@ -1,8 +1,8 @@
 {
   "app": {
-    "title": "Machine Learning Trainer",
-    "subtitle": "Build, train and evaluate regression models",
-    "version": "1.0.0"
+    "title": "Omni-ML-GUI",
+    "subtitle": "No-code machine learning & explainable AI workbench",
+    "version": "1.1.0"
   },
   "header": {
     "info_short": "i",

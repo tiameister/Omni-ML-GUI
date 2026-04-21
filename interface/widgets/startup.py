@@ -1,4 +1,5 @@
 import os
+from utils.paths import get_project_root as _get_project_root
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFrame, QMessageBox, QCheckBox,
     QComboBox
@@ -58,9 +59,7 @@ class StartupDialog(QDialog):
         layout.setContentsMargins(24, 22, 24, 20)
         layout.setSpacing(12)
 
-        # Resolve project root and logo path
-        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-        logo_path = os.path.join(proj_root, "images", "fau.png")
+        logo_path = str(_get_project_root() / "images" / "fau.png")
         pix = QPixmap(logo_path)
         logo = QLabel(self)
         if not pix.isNull():
@@ -147,8 +146,7 @@ class StartupDialog(QDialog):
             try:
                 from PySide6.QtCore import QUrl
                 from PySide6.QtGui import QDesktopServices
-                proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-                pdf_path = os.path.join(proj_root, 'info.pdf')
+                pdf_path = str(_get_project_root() / "info.pdf")
                 if os.path.exists(pdf_path):
                     QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
                 else:

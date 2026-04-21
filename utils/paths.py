@@ -170,21 +170,16 @@ def get_supplements_root(
 
     return ensure_directory(get_output_root(output_dir=output_dir, run_tag=run_tag) / "supplements")
 
-# Common predefined output folder names to avoid hardcoding across scripts
+# Canonical output sub-folder name constants.
+# Use these everywhere instead of bare string literals to prevent typos and
+# make refactoring a one-line change.
 EVALUATION_DIR = "1_Overall_Evaluation"
-FEATURE_IMP_DIR = "2_Feature_Importance"
-MANUSCRIPT_DIR = "3_Manuscript_Figures"
+DIAGNOSTICS_DIR = "2_Model_Diagnostics"   # residuals, curves, correlation
+MANUSCRIPT_DIR = "3_Manuscript_Figures"   # feature-importance, SHAP, PDP
 MODELS_DIR = "models"
 EXPLAINABILITY_DIR = "explainability"
 
-def get_latest_output_matches(base_path: str, sub_dir: str, file_pattern: str) -> list[str]:
-    """Helper to find files in dynamic output folders (e.g. '*_output*')."""
-    import glob
-    import os
-    pattern = os.path.join(base_path, "*_output*", sub_dir, file_pattern)
-    return sorted(glob.glob(pattern))
 
-
-def ensure_outdir(p="output"):
+def ensure_outdir(p: str = "output") -> str:
     os.makedirs(p, exist_ok=True)
     return p

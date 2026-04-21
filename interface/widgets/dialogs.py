@@ -1806,7 +1806,8 @@ class PublicationExportDialog(QDialog):
 
     @staticmethod
     def _social_science_mapping_path() -> Path:
-        return Path(__file__).resolve().parents[2] / "scripts" / "q1_social_science_mappings.json"
+        from utils.paths import get_project_root
+        return get_project_root() / "scripts" / "q1_social_science_mappings.json"
 
     def _load_social_science_mapping(self) -> dict:
         path = self._social_science_mapping_path()

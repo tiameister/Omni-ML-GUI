@@ -1,11 +1,28 @@
 class AppError(Exception):
-    """Base class for application-level exceptions."""
+    """Base class for all Omni-ML-GUI application-level exceptions.
+
+    Catch ``AppError`` to handle any recoverable application error in a
+    single except clause without swallowing unrelated errors:
+
+        try:
+            ...
+        except AppError as exc:
+            LOGGER.error("Application error: %s", exc)
+    """
 
 
 class DataLoadError(AppError):
-    """Raised when data loading/parsing fails."""
+    """Raised when a dataset cannot be loaded or parsed.
+
+    Callers: ``data.loader`` — raised on unsupported file formats,
+    encoding failures, or empty-file conditions.
+    """
 
 
 class ConfigError(AppError):
-    """Raised when configuration is invalid."""
+    """Raised when a configuration value is missing or invalid.
+
+    Callers: ``config.__init__`` — raised on bad env-var types,
+    out-of-range numeric options, or unrecognised enum values.
+    """
 

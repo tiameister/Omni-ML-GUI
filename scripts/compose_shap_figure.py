@@ -1,16 +1,20 @@
 """
 Compose SHAP summary + dependence plots into a single figure.
 
-Searches for SHAP exports under output/*_output*/explainability and
-assembles the following panels:
+Searches for SHAP exports saved by generate_shap_summary() under:
+  <run_root>/models/<model_name>/3_Manuscript_Figures/<model_key>/
+
+Assembles the following panels:
  - SHAP summary bar
  - SHAP summary beeswarm
- - Dependence plots for: Total Bullying Score, Mobile Phone (Daily Hours),
-   Teacher Intervention, Reading Books (Frequency), TV Time (Daily Hours)
+ - Dependence plots for top features
 
 Outputs:
- - new_plot/shap_summary_dependence_BestModel.png
- - new_plot/shap_summary_dependence_BestModel.pdf (optional if matplotlib supports)
+ - <analysis_root>/figures/shap_summary_dependence_BestModel.png
+ - <analysis_root>/figures/shap_summary_dependence_BestModel.pdf (optional)
+
+Set env MLTRAINER_RUN_ROOT to the run directory to search within it first.
+Set env MLTRAINER_ANALYSIS_ROOT to override the output directory.
 """
 from __future__ import annotations
 
@@ -117,13 +121,18 @@ def compose_figure(files: Dict[str, str], out_png: str, out_pdf: str | None = No
 
 
 def main() -> None:
-    repo_root = os.path.dirname(os.path.dirname(__file__))
+    from utils.paths import get_project_root
+    repo_root = str(get_project_root())
     run_root = str(os.environ.get("MLTRAINER_RUN_ROOT", "") or "").strip()
     analysis_root = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
 
     shap_dir = find_rf_shap_dir(repo_root, run_root=run_root)
     if shap_dir is None:
-        raise SystemExit("Could not locate SHAP exports under output/**/explainability")
+        raise SystemExit(
+            "Could not locate SHAP exports under "
+            "output/**/<model_name>/3_Manuscript_Figures. "
+            "Set MLTRAINER_RUN_ROOT to the specific run directory."
+        )
     files = expect_files(shap_dir)
     out_dir = os.path.join(analysis_root, "figures") if analysis_root else os.path.join(repo_root, "new_plot")
     out_png = os.path.join(out_dir, "shap_summary_dependence_BestModel.png")

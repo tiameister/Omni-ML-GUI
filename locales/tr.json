@@ -1,8 +1,8 @@
 {
   "app": {
-    "title": "Makine Öğrenmesi Eğitmeni",
-    "subtitle": "Regresyon modellerini oluşturun, eğitin ve değerlendirin",
-    "version": "1.0.0"
+    "title": "Omni-ML-GUI",
+    "subtitle": "Kodsuz makine öğrenmesi ve açıklanabilir yapay zeka platformu",
+    "version": "1.1.0"
   },
   "header": {
     "info_short": "i",

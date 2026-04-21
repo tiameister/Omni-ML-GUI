@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QPushButton
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
-import os
 
 from utils.logger import get_logger
+from utils.paths import get_project_root
 
 LOGGER = get_logger(__name__)
 
@@ -16,13 +16,14 @@ def create_header(title, subtitle=None):
     v_main.setContentsMargins(24, 12, 24, 12)
     v_main.setSpacing(16)
 
+    _img_root = get_project_root() / "images"
+
     left_logo = QLabel(container)
     left_logo.setObjectName("leftLogo")
     try:
-        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-        usak_path = os.path.join(proj_root, 'images', 'usak.png')
-        if os.path.exists(usak_path):
-            pm = QPixmap(usak_path)
+        usak_path = _img_root / "usak.png"
+        if usak_path.exists():
+            pm = QPixmap(str(usak_path))
             if not pm.isNull():
                 left_logo.setPixmap(pm)
                 left_logo.setScaledContents(True)
@@ -33,10 +34,9 @@ def create_header(title, subtitle=None):
 
     right_logo = QLabel(container)
     try:
-        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-        fau_path = os.path.join(proj_root, 'images', 'fau.png')
-        if os.path.exists(fau_path):
-            pm2 = QPixmap(fau_path)
+        fau_path = _img_root / "fau.png"
+        if fau_path.exists():
+            pm2 = QPixmap(str(fau_path))
             if not pm2.isNull():
                 right_logo.setPixmap(pm2)
                 right_logo.setScaledContents(True)

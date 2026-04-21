@@ -264,10 +264,6 @@ class FeatureEngineeringTransformer(BaseEstimator, TransformerMixin):
                     
         return np.array(names)
 
-def apply_feature_engineering(*args, **kwargs):
-    """Legacy bypass, logic moved to Pipeline native FeatureEngineeringTransformer"""
-    return args[0], list(args[0].columns), []
-
 def generate_static_fe_dataset(df: pd.DataFrame, config: dict, target_col: str, save_dir: str, filename: str) -> str:
     """
     WARNING: Generates a statically transformed dataset and returns its path.

@@ -6,9 +6,9 @@ authors:
   email: "taha.ilter.akar@fau.de"
   affiliation: "Friedrich-Alexander-Universität Erlangen-Nürnberg (FAU)"
 title: "Omni-ML-GUI"
-version: 1.0.1
+version: 1.1.0
 doi: "10.5281/zenodo.19649882"
-date-released: 2026-04-19
+date-released: 2026-04-21
 url: "https://github.com/tiameister/Omni-ML-GUI"
 abstract: "Omni-ML-GUI is a user-friendly graphical interface designed to simplify the process of training and evaluating machine learning models. It provides an intuitive platform for users to interact with various machine learning algorithms, enabling them to easily configure parameters, visualize results, and gain insights from their data without requiring extensive coding knowledge."
 keywords:

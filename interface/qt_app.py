@@ -2975,10 +2975,14 @@ class MLTrainerApp(QMainWindow):
                 self._load_image_to_label(r2_png, c.figures_img)
 
             if best:
-                # SHAP summary is saved under 3_Manuscript_Figures/<model_name>/ by generate_shap_summary.
+                # generate_shap_summary saves under:
+                #   <run_dir>/models/<safe_model_name>/3_Manuscript_Figures/<shap_key>/
+                # where shap_key = fe_prefix + model_name.
                 shap_model_key = fe_prefix + best
                 shap_png = os.path.join(
                     self._latest_result_dir,
+                    "models",
+                    safe_folder_name(best, fallback="model"),
                     "3_Manuscript_Figures",
                     shap_model_key,
                     f"{shap_model_key}_shap_summary_beeswarm.png",

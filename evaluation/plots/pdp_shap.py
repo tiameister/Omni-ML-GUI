@@ -643,12 +643,8 @@ def generate_shap_summary(
         except Exception:
             vals = shap_values[:, top_idx]
             Xs_vals = Xs_sel
-        # Normalize quotes in feature names to avoid rendering issues
-        try:
-            from utils.text import normalize_quotes_ascii as _qascii
-            sel_pretty_plot = [_qascii(n) for n in sel_pretty]
-        except Exception:
-            sel_pretty_plot = sel_pretty
+        # _qascii is module-level (utils.text.normalize_quotes_ascii or a fallback stub)
+        sel_pretty_plot = [_qascii(n) for n in sel_pretty]
         shap.summary_plot(vals, Xs_vals, feature_names=sel_pretty_plot, show=False)
         fig_bee = plt.gcf()
         top_margin = _apply_plot_header(fig_bee, f"SHAP Summary - {best_model_name}")
@@ -677,11 +673,7 @@ def generate_shap_summary(
         bar_h = min(14.0, max(3.0, 0.5 * nfeat + 1.4))
         bar_w = min(12.5, max(6.4, 5.6 + 0.04 * max_label_len))
         plt.figure(figsize=(bar_w, bar_h))
-        try:
-            from utils.text import normalize_quotes_ascii as _qascii
-            sel_pretty_bar = [_qascii(n) for n in sel_pretty]
-        except Exception:
-            sel_pretty_bar = sel_pretty
+        sel_pretty_bar = [_qascii(n) for n in sel_pretty]
         shap.summary_plot(shap_values[:, top_idx], Xs_sel, feature_names=sel_pretty_bar, plot_type="bar", show=False)
         fig_bar = plt.gcf()
         top_margin_bar = _apply_plot_header(fig_bar, f"SHAP Summary (Bar) - {best_model_name}")
