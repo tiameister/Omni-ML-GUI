@@ -179,10 +179,12 @@ def build_run_path_map(run_root: str | Path) -> dict[str, str]:
         "diagnostics": str(ensure_directory(root / DIAGNOSTICS_DIR)),
         "figures": str(ensure_directory(root / MANUSCRIPT_DIR)),
         # Legacy schema (compatibility)
-        "evaluation_legacy": str(ensure_directory(root / LEGACY_EVALUATION_DIR)),
-        "feature_selection_legacy": str(ensure_directory(root / LEGACY_FEATURE_SELECTION_DIR)),
-        "diagnostics_legacy": str(ensure_directory(root / "2_Model_Diagnostics")),
-        "figures_legacy": str(ensure_directory(root / LEGACY_MANUSCRIPT_DIR)),
+        # Do not create legacy dirs eagerly; runtime can map them as symlinks to
+        # canonical folders to avoid duplicate artifact copies.
+        "evaluation_legacy": str(root / LEGACY_EVALUATION_DIR),
+        "feature_selection_legacy": str(root / LEGACY_FEATURE_SELECTION_DIR),
+        "diagnostics_legacy": str(root / "2_Model_Diagnostics"),
+        "figures_legacy": str(root / LEGACY_MANUSCRIPT_DIR),
         "models_root": str(ensure_directory(root / MODELS_DIR)),
         "supplements_root": str(ensure_directory(root / "analysis" / "supplements")),
     }

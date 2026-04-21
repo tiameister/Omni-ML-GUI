@@ -322,7 +322,7 @@
       "var_checkbox_tip": "Gürültüyü azaltmak için SHAP öncesinde neredeyse sabit özellikleri kaldırır. Devre dışı bırakmak için işareti kaldırın.",
       "var_spin_tip": "Varyansı bu eşikten düşük özellikler neredeyse sabit kabul edilir.",
       "include_label": "Her zaman dahil et (virgülle ayrılmış ham adlar):",
-      "include_placeholder": "gender, bullying_total ...",
+      "include_placeholder": "feature_a, feature_b ...",
       "include_tip": "Filtrelense bile bu ham özellik adlarının her zaman dahil edilmesini sağlar.",
       "top_n_value": "Top-{value}",
       "var_value": "var >= {value}",

@@ -53,7 +53,7 @@ def describe_target(csv_path: str, out_dir: str) -> Tuple[dict, str]:
     # Feature set and target preparation mirrors main.py.
     exclude = set([target] + m_items + z_items + bully_subs + drop_cols)
     feature_cols = [c for c in df.columns if c not in exclude]
-    if bully not in feature_cols:
+    if bully and bully not in feature_cols:
         feature_cols = [bully] + feature_cols
 
     y_raw = df[target]
@@ -183,8 +183,9 @@ def describe_target(csv_path: str, out_dir: str) -> Tuple[dict, str]:
 
 
 if __name__ == '__main__':
+    env_data_path = str(os.environ.get("DATASET_PATH", "") or "").strip()
     csv_clean = os.path.join(ROOT, 'dataset', 'data_cleaned.csv')
-    csv_path = csv_clean if os.path.exists(csv_clean) else os.path.join(ROOT, 'dataset', 'data.csv')
+    csv_path = env_data_path if env_data_path else (csv_clean if os.path.exists(csv_clean) else os.path.join(ROOT, 'dataset', 'data.csv'))
     run_root = str(os.environ.get("MLTRAINER_RUN_ROOT", "") or "").strip()
     analysis_root = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
     if analysis_root:

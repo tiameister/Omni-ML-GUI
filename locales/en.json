@@ -322,7 +322,7 @@
       "var_checkbox_tip": "Drop near-constant features before SHAP to reduce noise. Uncheck to disable.",
       "var_spin_tip": "Treat features with variance below this threshold as near-constant.",
       "include_label": "Always include (comma-separated raw names):",
-      "include_placeholder": "gender, bullying_total ...",
+      "include_placeholder": "feature_a, feature_b ...",
       "include_tip": "Ensure these raw feature names are always included even if filtered.",
       "top_n_value": "Top-{value}",
       "var_value": "var >= {value}",

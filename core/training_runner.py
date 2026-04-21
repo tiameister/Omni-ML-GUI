@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -51,6 +50,29 @@ def _safe_call(cb, *args, context: str):
 def _raise_if_cancelled(should_cancel):
     if callable(should_cancel) and should_cancel():
         raise RuntimeError("Cancelled by user")
+
+
+def _ensure_legacy_bridge(legacy_path: str, canonical_path: str) -> None:
+    """Create a legacy->canonical symlink bridge to avoid duplicate files."""
+    legacy = str(legacy_path or "").strip()
+    canonical = str(canonical_path or "").strip()
+    if not legacy or not canonical:
+        return
+    if os.path.realpath(legacy) == os.path.realpath(canonical):
+        return
+    if os.path.islink(legacy):
+        try:
+            if os.path.realpath(legacy) == os.path.realpath(canonical):
+                return
+        except Exception:
+            pass
+    if os.path.exists(legacy):
+        # Keep existing legacy paths untouched for safety.
+        return
+    try:
+        os.symlink(canonical, legacy, target_is_directory=True)
+    except Exception:
+        LOGGER.exception("Failed to create legacy bridge: %s -> %s", legacy, canonical)
 
 
 def _project_root_dir() -> str:
@@ -363,6 +385,7 @@ def run_training(
     os.makedirs(analysis_root, exist_ok=True)
     out_info["analysis_dir"] = analysis_root
     out_info["analysis_dir_legacy"] = str(path_map.get("evaluation_legacy", os.path.join(run_outdir, LEGACY_EVALUATION_DIR)))
+    _ensure_legacy_bridge(out_info["analysis_dir_legacy"], analysis_root)
     model_root = str(path_map.get("models_root", get_run_model_root(run_root)))
     out_info["model_dir"] = model_root
     supplements_root = str(path_map.get("supplements_root", get_supplements_root(run_root=run_root)))
@@ -379,24 +402,6 @@ def run_training(
         fe_prefix = "feature_engineering_" if fe_enabled else ""
         save_model_metrics(run_outdir, metrics_df, filename_prefix=fe_prefix)
         save_cv_splits(run_outdir, {name: m.get("cv_scores", {}) for name, m in fitted_models.items()})
-        # Compatibility bridge: mirror canonical metrics outputs to legacy folder
-        # when different paths are used, so older readers/scripts still work.
-        legacy_eval_dir = str(path_map.get("evaluation_legacy", ""))
-        if legacy_eval_dir and os.path.realpath(legacy_eval_dir) != os.path.realpath(analysis_root):
-            os.makedirs(legacy_eval_dir, exist_ok=True)
-            for artifact_name in (
-                f"{fe_prefix}metrics.xlsx" if fe_prefix else "metrics.xlsx",
-                "cv_splits.xlsx",
-                f"{fe_prefix}metrics_R2_cv.png" if fe_prefix else "metrics_R2_cv.png",
-                f"{fe_prefix}metrics_RMSE_cv.png" if fe_prefix else "metrics_RMSE_cv.png",
-            ):
-                src = os.path.join(analysis_root, artifact_name)
-                dst = os.path.join(legacy_eval_dir, artifact_name)
-                if os.path.exists(src):
-                    try:
-                        shutil.copy2(src, dst)
-                    except Exception:
-                        LOGGER.exception("Failed to mirror legacy evaluation artifact: %s", artifact_name)
 
     # Persist fitted pipelines in a deterministic model subtree.
     try:
@@ -419,6 +424,7 @@ def run_training(
     os.makedirs(selection_dir, exist_ok=True)
     out_info["selection_dir"] = selection_dir
     out_info["selection_dir_legacy"] = str(path_map.get("feature_selection_legacy", os.path.join(run_outdir, LEGACY_FEATURE_SELECTION_DIR)))
+    _ensure_legacy_bridge(out_info["selection_dir_legacy"], selection_dir)
     try:
         selected_feats = list(features or [])
         target_col = str(target or "")
@@ -449,13 +455,6 @@ def run_training(
         with open(os.path.join(selection_dir, "ui_feature_selection_summary.txt"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
-        legacy_selection_dir = str(path_map.get("feature_selection_legacy", ""))
-        if legacy_selection_dir and os.path.realpath(legacy_selection_dir) != os.path.realpath(selection_dir):
-            os.makedirs(legacy_selection_dir, exist_ok=True)
-            with open(os.path.join(legacy_selection_dir, "ui_feature_selection_meta.json"), "w", encoding="utf-8") as f:
-                json.dump(ui_meta, f, ensure_ascii=False, indent=2)
-            with open(os.path.join(legacy_selection_dir, "ui_feature_selection_summary.txt"), "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
     except Exception:
         LOGGER.exception("Failed to persist feature selection provenance")
 
@@ -876,6 +875,16 @@ def run_training(
     if optional_scripts:
         _safe_call(callbacks.log, f"Running {len(optional_scripts)} extra analysis task(s)...", context="log")
         _safe_call(callbacks.log, f"Extra analysis output folder: {analysis_root}", context="log")
+    dataset_path_for_scripts = str(os.environ.get("DATASET_PATH", "") or "").strip()
+    if optional_scripts and (not dataset_path_for_scripts or not os.path.exists(dataset_path_for_scripts)):
+        # Provide a deterministic dataset path for script packs that require raw data.
+        dataset_path_for_scripts = os.path.join(run_outdir, "dataset_for_optional_scripts.csv")
+        try:
+            if not os.path.exists(dataset_path_for_scripts):
+                df.to_csv(dataset_path_for_scripts, index=False)
+        except Exception:
+            LOGGER.exception("Failed to persist dataset snapshot for optional scripts")
+            dataset_path_for_scripts = ""
 
     for label, script_filename in optional_scripts:
         raise_if_cancelled()
@@ -887,7 +896,11 @@ def run_training(
             "MLTRAINER_RUN_ROOT": run_outdir,
             "MLTRAINER_ANALYSIS_ROOT": analysis_root,
             "MLTRAINER_SUPPLEMENTS_ROOT": supplements_root,
+            "TARGET_COL": str(target),
+            "SELECTED_FEATURES": json.dumps(list(features or []), ensure_ascii=False),
         }
+        if dataset_path_for_scripts:
+            env_overrides["DATASET_PATH"] = dataset_path_for_scripts
 
         ok, output = _run_optional_script(
             script_filename,

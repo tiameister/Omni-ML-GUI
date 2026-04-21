@@ -161,7 +161,7 @@ def main():
         _, bully, m_items, z_items, bully_subs, drop_cols = detect_cols(df)
         exclude = set([target] + m_items + z_items + bully_subs + drop_cols)
         feature_cols = [c for c in df.columns if c not in exclude]
-        if bully not in feature_cols:
+        if bully and bully not in feature_cols:
             feature_cols = [bully] + feature_cols
             
     best_model_name = meta.get('best_model', 'BestModel') if meta else 'BestModel'

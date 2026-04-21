@@ -7,7 +7,8 @@ Outputs:
 from __future__ import annotations
 
 import os
-from utils.paths import EVALUATION_DIR
+import glob
+from utils.paths import EVALUATION_DIR, MANUSCRIPT_DIR
 import numpy as np
 import pandas as pd
 
@@ -26,13 +27,19 @@ MODELS = ['RandomForest', 'HistGB', 'XGBoost']  # XGBoost included if importance
 
 
 def load_importances(model: str, collapse_levels: bool = True) -> pd.DataFrame:
-    # look for feature_importance_{model}.csv under output/ or MLTRAINER_RUN_ROOT
-    cand = []
+    # Look for modern xlsx exports first, then legacy csv exports.
+    cand: list[tuple[float, str]] = []
     run_root = os.environ.get("MLTRAINER_RUN_ROOT", "").strip()
     search_dirs = [run_root] if (run_root and os.path.isdir(run_root)) else [os.path.join(ROOT, "output")]
 
     for search_dir in search_dirs:
-        for root_dir, dirs, files in os.walk(search_dir):
+        # Canonical/legacy model figure trees.
+        for p in glob.glob(os.path.join(search_dir, "models", "*", MANUSCRIPT_DIR, "*", f"{model}_feature_importance.xlsx")):
+            cand.append((os.path.getmtime(p), p))
+        for p in glob.glob(os.path.join(search_dir, "models", "*", "3_Manuscript_Figures", "*", f"{model}_feature_importance.xlsx")):
+            cand.append((os.path.getmtime(p), p))
+        # Legacy csv exports.
+        for root_dir, _, files in os.walk(search_dir):
             fname = f'feature_importance_{model}.csv'
             if fname in files:
                 p = os.path.join(root_dir, fname)
@@ -42,19 +49,42 @@ def load_importances(model: str, collapse_levels: bool = True) -> pd.DataFrame:
         return pd.DataFrame(columns=['feature','perm_importance_mean'])
     cand.sort(reverse=True)
     path = cand[0][1]
-    try:
-        df = pd.read_csv(path)
-    except Exception:
-        return pd.DataFrame(columns=['feature','perm_importance_mean','perm_importance_std'])
-    # Ensure expected columns even if alternative naming occurs
-    if 'perm_importance_mean' not in df.columns:
-        # try to infer numeric columns
-        num_cols = [c for c in df.columns if c != 'feature']
-        if num_cols:
-            df = df.rename(columns={num_cols[0]: 'perm_importance_mean'})
-    if 'perm_importance_std' not in df.columns:
-        df['perm_importance_std'] = 0.0
-    df = df[['feature','perm_importance_mean','perm_importance_std']]
+    if path.lower().endswith(".xlsx"):
+        try:
+            xdf = pd.read_excel(path, sheet_name=0)
+        except Exception:
+            return pd.DataFrame(columns=['feature','perm_importance_mean','perm_importance_std'])
+        if xdf.empty:
+            return pd.DataFrame(columns=['feature','perm_importance_mean','perm_importance_std'])
+        feat_col = "feature" if "feature" in xdf.columns else str(xdf.columns[0])
+        imp_col = None
+        for col in xdf.columns:
+            if str(col) == feat_col:
+                continue
+            if pd.api.types.is_numeric_dtype(xdf[col]):
+                imp_col = str(col)
+                break
+        if imp_col is None:
+            return pd.DataFrame(columns=['feature','perm_importance_mean','perm_importance_std'])
+        df = pd.DataFrame({
+            "feature": xdf[feat_col].astype(str),
+            "perm_importance_mean": pd.to_numeric(xdf[imp_col], errors="coerce"),
+            "perm_importance_std": 0.0,
+        }).dropna(subset=["perm_importance_mean"])
+    else:
+        try:
+            df = pd.read_csv(path)
+        except Exception:
+            return pd.DataFrame(columns=['feature','perm_importance_mean','perm_importance_std'])
+        # Ensure expected columns even if alternative naming occurs
+        if 'perm_importance_mean' not in df.columns:
+            # try to infer numeric columns
+            num_cols = [c for c in df.columns if c != 'feature']
+            if num_cols:
+                df = df.rename(columns={num_cols[0]: 'perm_importance_mean'})
+        if 'perm_importance_std' not in df.columns:
+            df['perm_importance_std'] = 0.0
+        df = df[['feature','perm_importance_mean','perm_importance_std']]
     if collapse_levels and not df.empty:
         # Collapse one-hot like patterns feature_variant (e.g., Reading Books (Frequency)_5)
         base_names = []
@@ -220,6 +250,10 @@ def main():
     # Automatically resolve models by finding their importance files
     found_models = set()
     for search_dir in search_dirs:
+        for path in glob.glob(os.path.join(search_dir, "models", "*", MANUSCRIPT_DIR, "*", "*_feature_importance.xlsx")):
+            base = os.path.basename(path)
+            if base.endswith("_feature_importance.xlsx"):
+                found_models.add(base[: -len("_feature_importance.xlsx")])
         for root_dir, dirs, files in os.walk(search_dir):
             for fname in files:
                 if fname.startswith('feature_importance_') and fname.endswith('.csv'):

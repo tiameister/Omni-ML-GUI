@@ -199,7 +199,7 @@ def detect_cols(df: pd.DataFrame):
         if n in drop_norms or n == "id" or re_faal.match(n) or re_sensitive.match(n):
             drop_cols.append(c)
 
-    # Detect target (happiness) by Turkish or English column names or environment variable
+    # Detect target by common Turkish/English aliases or environment override.
     target_env = os.environ.get("TARGET_COL")
     if target_env and target_env in df.columns:
         target = target_env
@@ -214,7 +214,7 @@ def detect_cols(df: pd.DataFrame):
         LOGGER.warning("Hedef sütunomatik bulunamadı: (mutluluk vb.). GUI üzerinden seçmeniz gerekebilir.")
         target = None
     
-    # Detect bully (total bullying score) by Turkish or English column names
+    # Detect a high-priority score-like feature by Turkish/English aliases.
     bully = next((c for c, n in nm.items() if n in {
         "zorbalik", "zorbaliktoplam", "zorbalik_toplam",
         "totalbullyingscore","total_bullying_score","bullying_score"

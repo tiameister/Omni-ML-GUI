@@ -17,7 +17,7 @@ import glob
 import json
 import math
 import os
-from utils.paths import EVALUATION_DIR, MANUSCRIPT_DIR
+from utils.paths import DIAGNOSTICS_DIR, EVALUATION_DIR, MANUSCRIPT_DIR
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -113,7 +113,7 @@ def _strip_training_prefix(name: str) -> str:
 
 
 def find_prediction_files(run_root: str) -> List[Tuple[str, str]]:
-    pattern = os.path.join(run_root, "models", "*", EVALUATION_DIR, "*_predictions_vs_actual.xlsx")
+    pattern = os.path.join(run_root, "models", "*", DIAGNOSTICS_DIR, "*", "*_predictions_vs_actual.xlsx")
     by_model: Dict[str, Tuple[str, str]] = {}
     for path in glob.glob(pattern):
         fname = os.path.basename(path)

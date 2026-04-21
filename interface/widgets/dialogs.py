@@ -835,7 +835,7 @@ class ShapSettingsDialog(QDialog):
         # Always include
         inc_row = QHBoxLayout()
         inc_row.addWidget(QLabel(tr("dialogs.shap_settings.include_label", default="Always include (comma-separated raw names):")))
-        self.include_edit = QLineEdit(); self.include_edit.setPlaceholderText(tr("dialogs.shap_settings.include_placeholder", default="gender, bullying_total ..."))
+        self.include_edit = QLineEdit(); self.include_edit.setPlaceholderText(tr("dialogs.shap_settings.include_placeholder", default="feature_a, feature_b ..."))
         self.include_edit.setToolTip(tr("dialogs.shap_settings.include_tip", default="Ensure these raw feature names are always included even if filtered."))
         inc_row.addWidget(self.include_edit)
         root.addLayout(inc_row)

@@ -36,7 +36,8 @@ target, bully, m_items, z_items, bully_subs, drop_cols = detect_cols(df)
 exclude = set([target] + m_items + z_items + bully_subs + drop_cols)
 feature_cols = [c for c in df.columns if c not in exclude]
 if bully not in feature_cols:
-    feature_cols = [bully] + feature_cols
+    if bully:
+        feature_cols = [bully] + feature_cols
 
 # Prepare target variable
 y_raw = df[target]
@@ -237,7 +238,7 @@ if DO_SHAP:
 # ---- 8. Save Meta Info ----
 meta = {
     "target": target,
-    "bullying_total": bully,
+    "priority_feature": bully,
     "excluded_m_items": m_items,
     "excluded_z_items": z_items + bully_subs,
     "dropped_geo_faaliyet_id": list(drop_cols),

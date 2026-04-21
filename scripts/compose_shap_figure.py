@@ -33,7 +33,9 @@ def find_rf_shap_dir(base: str, run_root: str | None = None) -> str | None:
     candidates = []
     if run_root and os.path.isdir(run_root):
         candidates.extend(glob.glob(os.path.join(run_root, "models", "*", MANUSCRIPT_DIR)))
+        candidates.extend(glob.glob(os.path.join(run_root, "models", "*", MANUSCRIPT_DIR, "*")))
         candidates.extend(glob.glob(os.path.join(run_root, "models", "*", LEGACY_MANUSCRIPT_DIR)))
+        candidates.extend(glob.glob(os.path.join(run_root, "models", "*", LEGACY_MANUSCRIPT_DIR, "*")))
     candidates.extend(glob.glob(os.path.join(base, "output", "*_output*", MANUSCRIPT_DIR)))
     candidates.extend(glob.glob(os.path.join(base, "output", "*_output*", LEGACY_MANUSCRIPT_DIR)))
     candidates = sorted(set(candidates), key=lambda p: (len(p), p), reverse=True)
@@ -85,15 +87,13 @@ def compose_figure(files: Dict[str, str], out_png: str, out_pdf: str | None = No
     fig, axes = plt.subplots(2, 4, figsize=(20, 10))
     axes = axes.flatten()
 
+    dep_keys = sorted([k for k in files.keys() if k.startswith("dep::")])[:5]
     panels = [
         ("summary_bar", "SHAP summary — bar"),
         ("summary_bees", "SHAP summary — beeswarm"),
-        ("dep::Total Bullying Score", "Dependence — Total Bullying Score"),
-        ("dep::Mobile Phone (Daily Hours)", "Dependence — Mobile Phone (daily hours)"),
-        ("dep::Teacher Intervention", "Dependence — Teacher Intervention"),
-        ("dep::Reading Books (Frequency)", "Dependence — Reading Books (frequency)"),
-        ("dep::TV Time (Daily Hours)", "Dependence — TV Time (daily hours)"),
     ]
+    for idx, key in enumerate(dep_keys, start=1):
+        panels.append((key, f"Dependence — Feature {idx}"))
 
     for ax in axes:
         ax.axis("off")

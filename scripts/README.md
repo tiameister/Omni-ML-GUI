@@ -84,7 +84,7 @@ Default behavior automatically loads social-science mappings from:
 
 - `scripts/q1_social_science_mappings.json`
 
-This JSON is the main edit file for adding new column/value mappings (for example, bullying, school belonging, school happiness, region labels, parental education, income labels).
+This JSON is the main edit file for adding new column/value mappings (for example, behavioral metrics, engagement indicators, regional labels, parental education, income labels).
 Publication Studio preset buttons reuse the same mapping file, so updates here are reflected in both script and UI workflows.
 
 You can also provide an extra mapping file to extend or override defaults:
