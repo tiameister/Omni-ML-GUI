@@ -59,11 +59,57 @@ try:
 except Exception:
     CV_STRATIFY = 'none'
 from config.selections import get_selected_models
+from models.hyperparameters import sanitize_hyperparams
+
+
+# Params that the training pipeline owns/injects and must NEVER be overwritten
+# by user-supplied hyperparameters (random_state, parallelism, etc.).
+# Keeping this list tight preserves reproducibility and the CV contract.
+_PROTECTED_PARAMS: set[str] = {"random_state", "n_jobs"}
+
+
+def _apply_hyperparams(estimator, model_name: str, user_params: dict | None,
+                        log_callback=None):
+    """Validate user hyperparameters and override defaults on ``estimator``.
+
+    * Sanitized values are taken from ``models.hyperparameters`` (single source
+      of truth that the UI also consumes).
+    * Protected params (random_state, n_jobs) are preserved from the baseline
+      constructor to keep the CV pipeline deterministic.
+    * Overrides are applied via ``estimator.set_params(**kwargs)`` so the
+      change reaches the actual sklearn instance — not a shadow copy.
+
+    Returns the resolved ``{param: value}`` dict so the caller can log
+    provenance alongside the model.
+    """
+    if not user_params:
+        resolved: dict = {}
+    else:
+        resolved = sanitize_hyperparams(model_name, user_params)
+
+    if not resolved:
+        return {}
+
+    safe = {k: v for k, v in resolved.items() if k not in _PROTECTED_PARAMS}
+    if not safe:
+        return resolved
+
+    try:
+        estimator.set_params(**safe)
+    except (ValueError, TypeError) as exc:
+        # Bad override should not silently fall back to defaults - the user
+        # must know that their configuration was rejected.
+        msg = f"[Hyperparameters] Invalid override(s) for {model_name}: {exc}"
+        LOGGER.error(msg)
+        _safe_call(log_callback, msg, context="hyperparams_invalid")
+        raise
+    return resolved
 
 
 def train_and_evaluate(
     X, y, preprocessor, model_names=None, progress_callback=None,
-    cv_mode='kfold', cv_folds=5, log_callback=None, model_status_callback=None
+    cv_mode='kfold', cv_folds=5, log_callback=None, model_status_callback=None,
+    model_hyperparams: dict | None = None,
 ):
     """
     Train and evaluate multiple regression models with cross-validation.
@@ -77,6 +123,11 @@ def train_and_evaluate(
         cv_folds: Number of CV folds.
         log_callback: Function to log messages (optional).
         model_status_callback: Function to report model status (optional).
+        model_hyperparams: Optional {model_name: {param: value}} map. Values
+            come from the UI (gear button on each model card) and override
+            the baseline constructor kwargs. Protected params like
+            ``random_state`` and ``n_jobs`` are always preserved to keep the
+            CV pipeline reproducible. See models/hyperparameters.py.
     Returns:
         metrics_df: DataFrame of model metrics.
         fitted_models: Dictionary of fitted model objects.
@@ -123,15 +174,76 @@ def train_and_evaluate(
     except Exception:
         y_strata = None
     total = len(model_names)
+    user_hparams_map = dict(model_hyperparams or {})
     for idx, name in enumerate(model_names):
         if name not in all_models:
             continue
-        pipe = Pipeline([("prep", preprocessor), ("model", all_models[name])])
+
+        # Apply user-supplied hyperparameters directly on the baseline estimator
+        # so that the instance wired into the Pipeline is the one the user
+        # configured. We apply before Pipeline wrapping to keep the override
+        # path explicit and auditable.
+        model_instance = all_models[name]
+        try:
+            resolved_hparams = _apply_hyperparams(
+                model_instance,
+                name,
+                user_hparams_map.get(name),
+                log_callback=log_callback,
+            )
+        except (ValueError, TypeError):
+            # Already logged inside _apply_hyperparams. Skip this model so the
+            # run doesn't corrupt the metrics table with a silently defaulted
+            # estimator.
+            if callable(log_callback):
+                _safe_call(log_callback,
+                           f"[Skip] {name}: invalid hyperparameters, not trained.",
+                           context="log_callback:skip")
+            continue
+
+        pipe = Pipeline([("prep", preprocessor), ("model", model_instance)])
 
         oof_pred = None
 
         if callable(log_callback):
             _safe_call(log_callback, f"[Start] {name}", context="log_callback:start")
+            if resolved_hparams:
+                try:
+                    overrides_txt = ", ".join(
+                        f"{k}={resolved_hparams[k]!r}" for k in sorted(resolved_hparams)
+                    )
+                    _safe_call(log_callback,
+                               f"[Hyperparameters] {name} overrides: {overrides_txt}",
+                               context="log_callback:hparams")
+                except Exception:
+                    pass
+            # Pipeline integrity check: confirm the values the UI sent are
+            # the ones the estimator actually holds right before training.
+            try:
+                actual_params = pipe.named_steps["model"].get_params()
+                if resolved_hparams:
+                    mismatches = []
+                    for k, v in resolved_hparams.items():
+                        if k in _PROTECTED_PARAMS:
+                            continue
+                        if actual_params.get(k) != v:
+                            mismatches.append(
+                                f"{k}: expected {v!r}, got {actual_params.get(k)!r}"
+                            )
+                    assert not mismatches, (
+                        f"Hyperparameter mismatch on {name}: " + "; ".join(mismatches)
+                    )
+                LOGGER.info(
+                    "[Pipeline verify] %s: get_params() sample -> %s",
+                    name,
+                    {k: actual_params.get(k) for k in sorted(resolved_hparams)}
+                    if resolved_hparams else {"(defaults)": True},
+                )
+            except AssertionError as exc:
+                LOGGER.error(str(exc))
+                _safe_call(log_callback, f"[Pipeline ERROR] {exc}",
+                           context="log_callback:pipe_verify")
+                raise
         if callable(model_status_callback):
             _safe_call(model_status_callback, name, "start", context="model_status_callback:start")
 

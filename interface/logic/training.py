@@ -54,6 +54,7 @@ def run_training(
     persist_run_tag: str | None = None,
     feature_value_labels: dict[str, dict[str, str]] | None = None,
     shap_settings: dict[str, object] | None = None,
+    model_hyperparams: dict[str, dict[str, object]] | None = None,
 ):
     """UI entrypoint: runs training based on current UI state.
 
@@ -73,6 +74,10 @@ def run_training(
 
     optional_scripts = _resolve_optional_scripts(list(selected_plots or []))
 
+    # Prefer explicit argument, otherwise pick from state (SSOT for UI state).
+    if model_hyperparams is None:
+        model_hyperparams = dict(getattr(state, "model_hyperparams", {}) or {})
+
     return run_training_core(
         df=state.df,
         target=str(state.target),
@@ -91,4 +96,5 @@ def run_training(
         feature_value_labels=feature_value_labels,
         shap_settings=shap_settings,
         optional_scripts=optional_scripts,
+        model_hyperparams=model_hyperparams,
     )

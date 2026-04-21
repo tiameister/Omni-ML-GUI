@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QTableView,
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QComboBox, QSpinBox, QCheckBox, QProgressBar, QTextEdit,
-    QTabWidget, QScrollArea, QTableWidget, QFrame, QGridLayout, QListWidget, QAbstractItemView, QSizePolicy, QAbstractSpinBox, QFormLayout
+    QTabWidget, QScrollArea, QTableWidget, QFrame, QGridLayout, QListWidget, QAbstractItemView, QSizePolicy, QAbstractSpinBox, QFormLayout, QStackedWidget
 )
 from interface.widgets.checkboxes import create_model_checkboxes, create_plot_checkboxes
 from PySide6.QtCore import Qt, QSize
@@ -106,7 +106,7 @@ def apply_translations(w):
         tr("controls.workflow.step3_hint", default="Select which machine learning models you want to include in the evaluation phase.")
     )
     w.run_hint_label.setText(
-        tr("controls.workflow.step4_hint", default="Initialize the training pipeline. Live monitoring and runtime context will stream below.")
+        tr("controls.workflow.step4_hint", default="Start training to populate Summary, Tables, Figures and SHAP.")
     )
     w.customize_plots_btn.setText(tr("controls.buttons.customize_plots", default="Customize Plots..."))
     w.shap_settings_btn.setText(tr("controls.buttons.shap_settings", default="SHAP Settings..."))
@@ -165,7 +165,8 @@ def apply_translations(w):
     except Exception as e:
         import logging
         logging.debug(f"Failed to set status_label: {e}")
-    w.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
+    if hasattr(w, "results_save_status"):
+        w.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
 
     if hasattr(w, "feedback_event_label"):
         w.feedback_event_label.setText(
@@ -196,20 +197,11 @@ def apply_translations(w):
     w.log_box.setPlaceholderText(
         tr("controls.results.logs_placeholder", default="Execution logs will appear here.")
     )
-    w.results_save_button.setText(tr("controls.results.save_this_run", default="Save This Run"))
-    w.results_save_button.setToolTip(
-        tr("controls.results.save_tooltip", default="Persist current temporary run outputs into output/runs.")
-    )
-    w.results_summary_title.setText(tr("controls.results.summary_title", default="Results Summary"))
-    w.results_decision_title.setText(tr("controls.results.decision_title", default="Run Decision Snapshot"))
-    w.results_decision_best_label.setText(tr("controls.results.decision_best", default="Best model:"))
-    w.results_decision_metrics_label.setText(tr("controls.results.decision_metrics", default="Critical metrics:"))
-    w.results_decision_confidence_label.setText(tr("controls.results.decision_confidence", default="Confidence:"))
-    w.results_decision_next_label.setText(tr("controls.results.decision_next", default="Next action:"))
-    w.results_decision_best_value.setText(tr("common.not_available_short", default="-"))
-    w.results_decision_metrics_value.setText(tr("common.not_available_short", default="-"))
-    w.results_decision_confidence_value.setText(tr("common.not_available_short", default="-"))
-    w.results_decision_next_value.setText(tr("common.not_available_short", default="-"))
+    if hasattr(w, "results_save_button"):
+        w.results_save_button.setText(tr("controls.results.save_this_run", default="Save This Run"))
+        w.results_save_button.setToolTip(
+            tr("controls.results.save_tooltip", default="Persist current temporary run outputs into output/runs.")
+        )
     w.results_summary_text.setPlaceholderText(
         tr("controls.results.best_model_placeholder", default="Best model summary will appear here after training.")
     )
@@ -624,16 +616,16 @@ def build_layout():
 
     w.run_card = QFrame()
     w.run_card.setObjectName("workflowCard")
-    w.run_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    w.run_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
     run_card_layout = QVBoxLayout(w.run_card)
     run_card_layout.setContentsMargins(24, 24, 24, 24)
-    run_card_layout.setSpacing(8)
+    run_card_layout.setSpacing(10)
     
     w.step4_title = QLabel("Execution & Monitoring")
     w.step4_title.setObjectName("sectionTitle")
     run_card_layout.addWidget(w.step4_title)
     
-    w.run_hint_label = QLabel("Initialize the training pipeline. Live monitoring and runtime context will stream below.")
+    w.run_hint_label = QLabel("Start training to populate Summary, Tables, Figures and SHAP.")
     w.run_hint_label.setObjectName("hintLabel")
     w.run_hint_label.setWordWrap(True)
     run_card_layout.addWidget(w.run_hint_label)
@@ -651,6 +643,31 @@ def build_layout():
     w.status_label.setProperty("severity", "neutral")
     w.status_label.setVisible(False)
 
+    # Explicit setup/active state switch prevents partial UI overlap regressions.
+    w.train_stage_stack = QStackedWidget()
+    w.train_stage_stack.setObjectName("trainStageStack")
+
+    setup_stage = QWidget()
+    setup_layout = QVBoxLayout(setup_stage)
+    setup_layout.setContentsMargins(0, 0, 0, 0)
+    setup_layout.setSpacing(12)
+
+    setup_hero = QWidget()
+    setup_hero_layout = QVBoxLayout(setup_hero)
+    setup_hero_layout.setContentsMargins(24, 6, 24, 6)
+    setup_hero_layout.setSpacing(6)
+    setup_hero_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+    w.train_button.setMinimumHeight(40)
+    w.train_button.setMinimumWidth(150)
+    setup_hero_layout.addWidget(w.train_button, 0, Qt.AlignmentFlag.AlignHCenter)
+    setup_hero_layout.addWidget(w.runtime_hint_label, 0, Qt.AlignmentFlag.AlignHCenter)
+    setup_layout.addWidget(setup_hero)
+
+    active_stage = QWidget()
+    active_layout = QVBoxLayout(active_stage)
+    active_layout.setContentsMargins(0, 0, 0, 0)
+    active_layout.setSpacing(8)
+
     # Group training controls in a frame for visual clarity
     train_controls_frame = QFrame()
     train_controls_frame.setObjectName("trainControlsFrame")
@@ -659,22 +676,20 @@ def build_layout():
     train_controls_layout.setSpacing(10)
     train_controls_layout.addWidget(w.persist_output_checkbox)
     train_controls_layout.addStretch(1)
-    train_controls_layout.addWidget(w.train_button)
-    train_controls_layout.addWidget(w.runtime_hint_label, 0, Qt.AlignmentFlag.AlignVCenter)
     train_controls_layout.addWidget(w.cancel_button)
-    run_card_layout.addWidget(train_controls_frame)
+    active_layout.addWidget(train_controls_frame)
 
     # Plot/analysis summary shown below the controls row (populated dynamically by the app).
     w.plot_summary_label = QLabel("")
     w.plot_summary_label.setObjectName("hintLabel")
     w.plot_summary_label.setWordWrap(True)
-    run_card_layout.addWidget(w.plot_summary_label)
+    active_layout.addWidget(w.plot_summary_label)
 
     w.progress_panel = QFrame()
     w.progress_panel.setObjectName("progressPanel")
     progress_layout = QVBoxLayout(w.progress_panel)
     progress_layout.setContentsMargins(10, 8, 10, 8)
-    progress_layout.setSpacing(6)
+    progress_layout.setSpacing(5)
 
     # Divider is part of progress_panel so it only appears when training is active.
     _progress_divider = QFrame()
@@ -726,7 +741,14 @@ def build_layout():
     progress_layout.addWidget(w.progress_timing_label)
 
     w.progress_panel.setVisible(False)
-    run_card_layout.addWidget(w.progress_panel)
+    active_layout.addWidget(w.progress_panel)
+
+    w.train_stage_stack.addWidget(setup_stage)
+    w.train_stage_stack.addWidget(active_stage)
+    w.train_stage_stack.setCurrentWidget(setup_stage)
+    w.train_stage_setup = setup_stage
+    w.train_stage_active = active_stage
+    run_card_layout.addWidget(w.train_stage_stack, 0)
 
     # Hidden action buttons: exposed via top menu for a cleaner workflow surface
     w.customize_plots_btn = QPushButton("Customize Plots…")
@@ -789,10 +811,7 @@ def build_layout():
     center_layout.addWidget(center_scroll)
     w.center_scroll = center_scroll
 
-    # Right panel: Output tabs
-    right_panel = QWidget(); right_panel.setObjectName("resultPanel")
-    right_layout = QVBoxLayout(right_panel)
-
+    # Results Hub now lives directly in Step 4 (single-column UX).
     kpi_row = QHBoxLayout()
     ds_card, w.kpi_dataset_title, w.kpi_dataset_value = _make_kpi_card("Dataset", "Not loaded")
     tg_card, w.kpi_target_title, w.kpi_target_value = _make_kpi_card("Target", "Not selected")
@@ -800,7 +819,10 @@ def build_layout():
     kpi_row.addWidget(ds_card)
     kpi_row.addWidget(tg_card)
     kpi_row.addWidget(rn_card)
-    right_layout.addLayout(kpi_row)
+    # Keep KPI widgets owned/alive for controller compatibility, but hide from Step 4 UX.
+    ds_card.setVisible(False)
+    tg_card.setVisible(False)
+    rn_card.setVisible(False)
 
     # Results and statistics text areas and tables
     w.result_box = QTextEdit(); w.result_box.setReadOnly(True)
@@ -839,49 +861,8 @@ def build_layout():
     results_tab = QWidget()
     results_layout = QVBoxLayout(results_tab)
     results_layout.setContentsMargins(0, 0, 0, 0)
-    results_layout.setSpacing(8)
-
-    w.results_save_row = QWidget()
-    save_row_layout = QHBoxLayout(w.results_save_row)
-    save_row_layout.setContentsMargins(0, 0, 0, 0)
-    save_row_layout.setSpacing(6)
-    w.results_save_button = QPushButton("Save This Run")
-    w.results_save_button.setObjectName("accentButton")
-    w.results_save_button.setToolTip("Persist current temporary run outputs into output/runs.")
-    w.results_save_status = QLabel("Run not saved")
-    w.results_save_status.setObjectName("hintLabel")
-    w.results_save_status.setWordWrap(True)
-    save_row_layout.addWidget(w.results_save_button)
-    save_row_layout.addWidget(w.results_save_status, 1)
-    results_layout.addWidget(w.results_save_row)
-
-    w.results_decision_card = QFrame()
-    w.results_decision_card.setObjectName("decisionCard")
-    decision_layout = QGridLayout(w.results_decision_card)
-    decision_layout.setContentsMargins(10, 8, 10, 8)
-    decision_layout.setHorizontalSpacing(10)
-    decision_layout.setVerticalSpacing(4)
-    w.results_decision_title = QLabel("Run Decision Snapshot")
-    w.results_decision_title.setObjectName("sectionTitle")
-    w.results_decision_best_label = QLabel("Best model:")
-    w.results_decision_best_value = QLabel("-")
-    w.results_decision_metrics_label = QLabel("Critical metrics:")
-    w.results_decision_metrics_value = QLabel("-")
-    w.results_decision_confidence_label = QLabel("Confidence:")
-    w.results_decision_confidence_value = QLabel("-")
-    w.results_decision_next_label = QLabel("Next action:")
-    w.results_decision_next_value = QLabel("-")
-
-    decision_layout.addWidget(w.results_decision_title, 0, 0, 1, 2)
-    decision_layout.addWidget(w.results_decision_best_label, 1, 0)
-    decision_layout.addWidget(w.results_decision_best_value, 1, 1)
-    decision_layout.addWidget(w.results_decision_metrics_label, 2, 0)
-    decision_layout.addWidget(w.results_decision_metrics_value, 2, 1)
-    decision_layout.addWidget(w.results_decision_confidence_label, 3, 0)
-    decision_layout.addWidget(w.results_decision_confidence_value, 3, 1)
-    decision_layout.addWidget(w.results_decision_next_label, 4, 0)
-    decision_layout.addWidget(w.results_decision_next_value, 4, 1)
-    results_layout.addWidget(w.results_decision_card)
+    results_layout.setSpacing(6)
+    results_layout.addLayout(kpi_row)
 
     w.results_tabs = QTabWidget()
     w.results_tabs.setDocumentMode(False)
@@ -890,13 +871,9 @@ def build_layout():
     summary_layout = QVBoxLayout(summary_tab)
     summary_layout.setContentsMargins(0, 0, 0, 0)
     summary_layout.setSpacing(6)
-    w.results_summary_title = QLabel("Results Summary")
-    w.results_summary_title.setObjectName("sectionTitle")
-
     w.results_summary_text = QTextEdit()
     w.results_summary_text.setReadOnly(True)
     w.results_summary_text.setPlaceholderText("Best model summary will appear here after training.")
-    summary_layout.addWidget(w.results_summary_title)
     summary_layout.addWidget(w.results_summary_text)
 
     tables_tab = QWidget()
@@ -928,7 +905,7 @@ def build_layout():
     w.figures_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
     w.figures_img = QLabel()
     w.figures_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    w.figures_img.setMinimumHeight(220)
+    w.figures_img.setMinimumHeight(180)
     w.figures_img.setScaledContents(False)
     figures_layout.addWidget(w.figures_list)
     figures_layout.addWidget(w.figures_img)
@@ -950,7 +927,7 @@ def build_layout():
     w.shap_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
     w.shap_img = QLabel()
     w.shap_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    w.shap_img.setMinimumHeight(220)
+    w.shap_img.setMinimumHeight(180)
     w.shap_img.setScaledContents(False)
     shap_layout.addWidget(w.shap_list)
     shap_layout.addWidget(w.shap_img)
@@ -959,7 +936,8 @@ def build_layout():
     w.results_tabs.addTab(tables_tab, "Tables")
     w.results_tabs.addTab(figures_tab, "Figures")
     w.results_tabs.addTab(shap_tab, "SHAP")
-    results_layout.addWidget(w.results_tabs)
+    w.results_tabs.setMinimumHeight(260)
+    results_layout.addWidget(w.results_tabs, 1)
     w.results_tabs.setEnabled(False)
 
     console_tab = QWidget(); ct_layout = QVBoxLayout(console_tab); ct_layout.addWidget(w.log_box)
@@ -1003,8 +981,8 @@ def build_layout():
     w.results_tab = results_tab
     w.notifications_tab = notifications_tab
     w.jobs_tab = jobs_tab
-    right_layout.addWidget(results_tab)
-    
+    run_card_layout.addWidget(results_tab, 1)
+
     from PySide6.QtWidgets import QDialog
     w.dev_console_dialog = QDialog(w)
     w.dev_console_dialog.setWindowTitle(tr("controls.dialogs.dev_console", default="Developer & Activity Console"))
@@ -1016,13 +994,13 @@ def build_layout():
     w.dev_tabs.addTab(jobs_tab, "Jobs")
     dev_layout.addWidget(w.dev_tabs)
 
-
-    # Assemble main layout
+    # Single-column main layout: workflow tabs + integrated Train results hub.
     center_panel.setMinimumWidth(360)
+    center_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     w.center_panel = center_panel
     main_layout.addWidget(center_panel)
 
-    # Footer bar
+    # ── Footer bar ──────────────────────────────────────────────────────────
     w.footer_bar = QFrame()
     w.footer_bar.setObjectName("footerBar")
     footer_layout = QHBoxLayout(w.footer_bar)
@@ -1032,39 +1010,12 @@ def build_layout():
     footer_layout.addWidget(w.feedback_event_label, 1)
     outer_layout.addWidget(w.footer_bar, 0)
 
-    # Results Hub is embedded directly in Step 4 and always visible.
-    # Tabs start disabled (results_tabs.setEnabled(False)) and are enabled after training.
-    w.right_panel = right_panel
-    run_card_layout.addWidget(w.right_panel)
+    # NOTE: No inline w.setStyleSheet() here.
+    # All visual styling is owned exclusively by interface/style/style.qss loaded
+    # via theme_manager.  Inline stylesheets on parent widgets override application-
+    # level QSS selectors for every descendant, which was the third root cause of
+    # the recurring layout regression.
 
-    # Basit QSS ile daha ferah ve sade bir görünüm
-    w.setStyleSheet('''
-        QFrame#decisionCard {
-            background: #f5f7fa;
-            border-radius: 8px;
-            border: 1px solid #e0e4ea;
-        }
-        QFrame#trainControlsFrame {
-            background: #f7fafd;
-            border-radius: 8px;
-            border: 1px solid #e0e4ea;
-        }
-        QTabWidget::pane {
-            border: 1px solid #e0e4ea;
-            border-radius: 8px;
-            background: #fff;
-        }
-        QTabBar::tab {
-            padding: 6px 16px;
-            min-width: 80px;
-            font-size: 13px;
-        }
-        QTabBar::tab:selected {
-            background: #eaf1fb;
-            color: #1a237e;
-            border-radius: 8px 8px 0 0;
-        }
-    ''')
     apply_translations(w)
     w.apply_translations = lambda: apply_translations(w)
     return w

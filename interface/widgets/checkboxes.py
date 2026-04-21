@@ -4,6 +4,8 @@ import os
 from PySide6.QtWidgets import (
     QButtonGroup,
     QGroupBox,
+    QStyle,
+    QToolButton,
     QVBoxLayout,
     QCheckBox,
     QToolBox,
@@ -353,6 +355,10 @@ def create_model_checkboxes():
 
     # Card grid (BigTech-style inline picker)
     model_cards: dict[str, QFrame] = {}
+    # Gear (settings) buttons per model - wired by qt_app.py to open the
+    # HyperparameterDialog. Kept here so each card owns its ⚙ affordance and
+    # users can configure a model without leaving the 3. Models tab.
+    settings_buttons: dict[str, QToolButton] = {}
     meta = {
         "LinearRegression": {"title": "Linear Regression", "tag": "Fast", "desc": "Baseline linear model"},
         "RidgeCV": {"title": "Ridge (CV)", "tag": "Recommended", "desc": "Regularized linear model with CV"},
@@ -402,6 +408,26 @@ def create_model_checkboxes():
         toggle.setObjectName("modelToggle")
         toggle.setToolTip(tooltips.get(name, name))
 
+        # Gear / settings button for per-model hyperparameter configuration.
+        settings_btn = QToolButton()
+        settings_btn.setObjectName("modelSettingsButton")
+        settings_btn.setAutoRaise(True)
+        settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        settings_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        try:
+            settings_btn.setIcon(
+                group.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+            )
+        except Exception:
+            settings_btn.setText("⚙")
+        settings_btn.setToolTip(
+            f"Configure hyperparameters for {info.get('title', name)}"
+        )
+        settings_btn.setAccessibleName(
+            f"Configure hyperparameters for {info.get('title', name)}"
+        )
+        settings_buttons[name] = settings_btn
+
         def _sync_toggle_text(state: bool, btn=toggle, fr=card):
             btn.setText("Selected" if state else "Select")
             fr.setProperty("selected", bool(state))
@@ -420,6 +446,7 @@ def create_model_checkboxes():
 
         top.addLayout(title_row, 1)
         top.addWidget(toggle, 0)
+        top.addWidget(settings_btn, 0)
         v.addLayout(top)
 
         desc = QLabel(str(info.get("desc", "")).strip())
@@ -516,6 +543,7 @@ def create_model_checkboxes():
 
     # expose a few handles for inline UX
     group.filter_edit = filter_edit
+    group.model_settings_buttons = settings_buttons
     group.preset_buttons = {
         "fast": btn_fast,
         "balanced": btn_balanced,

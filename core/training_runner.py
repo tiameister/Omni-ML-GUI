@@ -178,6 +178,7 @@ def run_training(
     feature_value_labels: dict[str, dict[str, str]] | None = None,
     shap_settings: dict[str, object] | None = None,
     optional_scripts: list[tuple[str, str]] | None = None,
+    model_hyperparams: dict[str, dict[str, object]] | None = None,
 ):
     """Pure training orchestration: no Qt/UI dependencies.
 
@@ -287,6 +288,29 @@ def run_training(
     def model_status(name: str, phase: str):
         _safe_call(callbacks.log, f"{phase.upper()}: {name}", context="log")
 
+    # Sanitize UI-provided hyperparameters once so the training loop always
+    # receives a clean dict it can trust (and so the run manifest records
+    # exactly the values that reached the estimators).
+    sanitized_hparams: dict[str, dict[str, object]] = {}
+    if model_hyperparams:
+        try:
+            from models.hyperparameters import has_schema, sanitize_hyperparams
+
+            for model_name, raw in dict(model_hyperparams).items():
+                name = str(model_name)
+                if name in selected_models and has_schema(name) and isinstance(raw, dict):
+                    sanitized_hparams[name] = sanitize_hyperparams(name, raw)
+        except Exception:
+            LOGGER.exception("Could not sanitize model_hyperparams; using defaults")
+            sanitized_hparams = {}
+
+    if sanitized_hparams:
+        _safe_call(
+            callbacks.log,
+            f"Custom hyperparameters applied for: {', '.join(sorted(sanitized_hparams))}",
+            context="log",
+        )
+
     metrics_df, fitted_models = train_and_evaluate(
         X,
         y,
@@ -297,6 +321,7 @@ def run_training(
         progress_callback=progress_callback,
         log_callback=callbacks.log,
         model_status_callback=model_status,
+        model_hyperparams=sanitized_hparams or None,
     )
 
     best = str(metrics_df.iloc[0]["model"]) if metrics_df is not None and not metrics_df.empty else None
@@ -493,6 +518,9 @@ def run_training(
                 "top_n": shap_top_n,
                 "var_thresh": shap_var_thresh,
                 "always_include": list(shap_always_include or []),
+            },
+            "model_hyperparams": {
+                name: dict(params) for name, params in sanitized_hparams.items()
             },
         }
         with open(os.path.join(run_outdir, "run_manifest.json"), "w", encoding="utf-8") as f:

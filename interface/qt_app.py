@@ -308,6 +308,7 @@ class MLTrainerApp(QMainWindow):
         self._apply_translations()
         self._snapshot_guard = False
         self._maybe_recover_previous_session()
+        self._set_train_stage("setup")
         self._push_notification("info", tr("notifications.app_ready", default="Application ready. Load a dataset to start."))
         self._capture_snapshot(clear_redo=True)
 
@@ -706,7 +707,7 @@ class MLTrainerApp(QMainWindow):
         if hasattr(self.header, "toggleModelsButton"):
             self.header.toggleModelsButton.clicked.connect(lambda _checked=False: self._open_models_panel())
         if hasattr(self.header, "toggleResultsButton"):
-            self.header.toggleResultsButton.clicked.connect(self._toggle_results_panel)
+            self.header.toggleResultsButton.setVisible(False)
         # Feature engineering is toggled in UI and applied during training.
         c.fe_checkbox.toggled.connect(self._on_toggle_feature_engineering)
         # Preview button
@@ -734,6 +735,16 @@ class MLTrainerApp(QMainWindow):
         for chk in c.model_checks.values():
             chk.toggled.connect(self._refresh_model_summary_debounced)
             chk.toggled.connect(self._on_user_setting_changed)
+
+        # Per-model gear / settings buttons: open HyperparameterDialog so users
+        # can override sklearn defaults for the targeted model only.
+        settings_buttons = getattr(c.model_picker, "model_settings_buttons", {}) or {}
+        for model_name, btn in settings_buttons.items():
+            if btn is None:
+                continue
+            btn.clicked.connect(
+                lambda _checked=False, n=model_name: self._open_hyperparameter_dialog(n)
+            )
         for chk in c.plot_checks.values():
             chk.toggled.connect(self._update_runtime_hint_debounced)
             chk.toggled.connect(self._on_user_setting_changed)
@@ -845,7 +856,7 @@ class MLTrainerApp(QMainWindow):
         self.act_view_results = QAction(self)
         self.act_view_results.setCheckable(True)
         self.act_view_results.toggled.connect(self._toggle_results_panel)
-        self.menu_view.addAction(self.act_view_results)
+        self.act_view_results.setVisible(False)
 
         self.menu_view.addSeparator()
         self.act_view_step1 = QAction(self)
@@ -1032,8 +1043,7 @@ class MLTrainerApp(QMainWindow):
         grp_settings = tr("command_palette.groups.settings", default="Settings")
         grp_help = tr("command_palette.groups.help", default="Help")
 
-        result_visible = self._is_results_dialog_visible()
-        result_state = tr("command_palette.state.visible", default="visible") if result_visible else tr("command_palette.state.hidden", default="hidden")
+        result_visible = True
         fe_state = tr("command_palette.state.enabled", default="enabled") if c.fe_checkbox.isChecked() else tr("command_palette.state.disabled", default="disabled")
         run_title = (
             tr("command_palette.run.queue_current", default="Queue Current Configuration")
@@ -1118,11 +1128,11 @@ class MLTrainerApp(QMainWindow):
             },
             {
                 "group": grp_view,
-                "title": tr("command_palette.view.toggle_results", default="Toggle Results Panel ({state})", state=result_state),
-                "description": tr("command_palette.view.toggle_results_desc", default="Show or hide the results panel."),
-                "keywords": "results right panel",
+                "title": tr("command_palette.view.open_results", default="Open Results (Step 4)"),
+                "description": tr("command_palette.view.open_results_desc", default="Jump to Step 4 where results are embedded."),
+                "keywords": "results train step 4",
                 "enabled": True,
-                "callback": lambda: self._toggle_results_panel(not result_visible),
+                "callback": lambda: self._go_to_step(3),
             },
             {
                 "group": grp_view,
@@ -1570,12 +1580,21 @@ class MLTrainerApp(QMainWindow):
 
         cv_mode = c.cv_mode_combo.currentData() if c.cv_mode_combo.currentData() else 'repeated'
         cv_folds = int(c.cv_spin.value())
+        # Only carry overrides for models that are actually selected so the
+        # saved job / manifest stays tight.
+        all_overrides = dict(getattr(self.state, "model_hyperparams", {}) or {})
+        model_hyperparams = {
+            name: dict(params)
+            for name, params in all_overrides.items()
+            if name in selected_models and isinstance(params, dict) and params
+        }
         return {
             "selected_models": selected_models,
             "selected_plots": selected_plots,
             "cv_mode": cv_mode,
             "cv_folds": cv_folds,
             "studio_profile": self._studio_profile_data(),
+            "model_hyperparams": model_hyperparams,
         }
 
     def _create_job(self, request: dict, status: str = "Queued", message: str = "Waiting in queue") -> dict:
@@ -1592,6 +1611,11 @@ class MLTrainerApp(QMainWindow):
             "cv_mode": str(request.get("cv_mode", "repeated")),
             "cv_folds": int(request.get("cv_folds", 5)),
             "studio_profile": dict(request.get("studio_profile", {}) or {}),
+            "model_hyperparams": {
+                str(name): dict(params)
+                for name, params in dict(request.get("model_hyperparams", {}) or {}).items()
+                if isinstance(params, dict)
+            },
             "message": str(message),
             "error": "",
         }
@@ -1606,6 +1630,14 @@ class MLTrainerApp(QMainWindow):
         self._snapshot_guard = True
         try:
             self.state.studio_profile = dict(job.get("studio_profile", {}) or {})
+            # Restore per-model hyperparameter overrides so re-queuing / editing
+            # a job retains the exact same training configuration.
+            job_hparams = dict(job.get("model_hyperparams", {}) or {})
+            merged = dict(getattr(self.state, "model_hyperparams", {}) or {})
+            for name, params in job_hparams.items():
+                if isinstance(params, dict):
+                    merged[str(name)] = dict(params)
+            self.state.model_hyperparams = merged
             selected_models = set(job.get("selected_models", []))
             for name, chk in c.model_checks.items():
                 chk.setChecked(name in selected_models)
@@ -1649,6 +1681,19 @@ class MLTrainerApp(QMainWindow):
         c.train_button.setToolTip(button_tip)
         if hasattr(self, "act_run_start"):
             self.act_run_start.setText(menu_text)
+
+    def _set_train_stage(self, stage: str):
+        c = self.controls
+        if not hasattr(c, "train_stage_stack"):
+            return
+        if stage == "active":
+            c.train_stage_stack.setCurrentWidget(c.train_stage_active)
+            return
+        c.train_stage_stack.setCurrentWidget(c.train_stage_setup)
+        if hasattr(c, "progress_panel"):
+            c.progress_panel.setVisible(False)
+        if hasattr(c, "cancel_button"):
+            c.cancel_button.setVisible(False)
 
     def _set_controls_for_run_state(self, running: bool):
         c = self.controls
@@ -1791,6 +1836,11 @@ class MLTrainerApp(QMainWindow):
             "cv_mode": str(cv_mode),
             "cv_folds": int(c.cv_spin.value()),
             "fe_enabled": bool(c.fe_checkbox.isChecked()),
+            "model_hyperparams": {
+                str(name): dict(params)
+                for name, params in dict(getattr(self.state, "model_hyperparams", {}) or {}).items()
+                if isinstance(params, dict) and params
+            },
             "left_panel_visible": bool(self._left_panel_visible),
             "right_panel_visible": bool(self._is_results_dialog_visible()),
             "step_index": int(step_index),
@@ -2229,6 +2279,16 @@ class MLTrainerApp(QMainWindow):
             else:
                 self.state.studio_profile = {}
 
+            raw_hparams = snapshot.get("model_hyperparams", {})
+            if isinstance(raw_hparams, dict):
+                self.state.model_hyperparams = {
+                    str(name): dict(params)
+                    for name, params in raw_hparams.items()
+                    if isinstance(params, dict)
+                }
+            else:
+                self.state.model_hyperparams = {}
+
             self._update_variable_selection_ui()
             self._set_results_dialog_visible(self._right_panel_visible)
 
@@ -2367,6 +2427,11 @@ class MLTrainerApp(QMainWindow):
                     "cv_mode": str(job.get("cv_mode", "repeated")),
                     "cv_folds": int(job.get("cv_folds", 5)),
                     "studio_profile": dict(job.get("studio_profile", {}) or {}),
+                    "model_hyperparams": {
+                        str(name): dict(params)
+                        for name, params in dict(job.get("model_hyperparams", {}) or {}).items()
+                        if isinstance(params, dict)
+                    },
                     "message": str(job.get("message", "")),
                     "error": str(job.get("error", "")),
                 })
@@ -2425,6 +2490,11 @@ class MLTrainerApp(QMainWindow):
                         "cv_mode": str(raw.get("cv_mode", "repeated")),
                         "cv_folds": int(raw.get("cv_folds", 5)),
                         "studio_profile": dict(raw.get("studio_profile", {}) or {}),
+                        "model_hyperparams": {
+                            str(name): dict(params)
+                            for name, params in dict(raw.get("model_hyperparams", {}) or {}).items()
+                            if isinstance(params, dict)
+                        },
                         "message": message,
                         "error": str(raw.get("error", "")),
                     })
@@ -2708,33 +2778,11 @@ class MLTrainerApp(QMainWindow):
 
         if hasattr(c, "results_tabs"):
             c.results_tabs.setEnabled(has_result)
-        if hasattr(c, "results_summary_title"):
-            c.results_summary_title.setVisible(True)
         if hasattr(c, "results_summary_text"):
             c.results_summary_text.setVisible(True)
             if not has_result:
                 # Clear content so placeholder text becomes visible.
                 c.results_summary_text.clear()
-        if hasattr(c, "results_decision_card"):
-            # Keep decision card pinned as a stable anchor for result interpretation.
-            c.results_decision_card.setVisible(True)
-
-        if hasattr(c, "results_save_row"):
-            c.results_save_row.setVisible(has_result)
-        if hasattr(c, "results_save_button"):
-            c.results_save_button.setEnabled(has_result and (not self._latest_result_saved))
-        if hasattr(c, "results_save_status"):
-            if not has_result:
-                c.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
-            elif self._latest_result_saved:
-                c.results_save_status.setText(tr("results.save_status.saved", default="Saved to output/runs"))
-            else:
-                c.results_save_status.setText(
-                    tr("results.save_status.temporary", default="Temporary run: click Save This Run to persist")
-                )
-
-        if not has_result:
-            self._update_decision_snapshot(None)
 
     def _discover_result_images(self, run_dir: str):
         figure_records: list[dict] = []
@@ -3220,10 +3268,8 @@ class MLTrainerApp(QMainWindow):
 
         if layout_version == UI_LAYOUT_VERSION:
             # Model selection is inline (Step 3); keep side model panel hidden.
-            # Results Hub is embedded in Step 4 — default visible; respect saved preference only
-            # if user explicitly collapsed it (stored as "false").
             self._left_panel_visible = False
-            self._right_panel_visible = str(settings.value("ui/rightPanelVisible", "true")).lower() in ("true", "1", "yes")
+            self._right_panel_visible = True
         else:
             # New layout or migrated session: show Results Hub by default.
             self._left_panel_visible = False
@@ -3234,7 +3280,8 @@ class MLTrainerApp(QMainWindow):
             if geometry is not None:
                 self.restoreGeometry(geometry)
 
-        self._set_results_dialog_visible(self._right_panel_visible)
+        self._set_results_dialog_visible(True)
+
         self._update_header_density()
 
     def _sync_header_panel_buttons(self):
@@ -3244,7 +3291,7 @@ class MLTrainerApp(QMainWindow):
             except Exception:
                 pass
         if hasattr(self.header, "toggleResultsButton"):
-            self.header.toggleResultsButton.setChecked(self._right_panel_visible)
+            self.header.toggleResultsButton.setVisible(False)
         self._sync_menu_actions()
 
     def _update_header_density(self):
@@ -3271,23 +3318,15 @@ class MLTrainerApp(QMainWindow):
             self.header.setMaximumHeight(92 if is_compact else 112)
 
     def _is_results_dialog_visible(self) -> bool:
-        c = self.controls
-        if hasattr(c, "right_panel"):
-            return bool(c.right_panel.isVisible())
-        return bool(self._right_panel_visible)
+        return True
 
     def _set_results_dialog_visible(self, visible: bool):
-        c = self.controls
-        target_visible = bool(visible)
-        self._right_panel_visible = target_visible
-
-        if hasattr(c, "right_panel"):
-            c.right_panel.setVisible(target_visible)
-
+        _ = visible
+        self._right_panel_visible = True
         self._sync_header_panel_buttons()
 
     def _on_results_dialog_finished(self, _result: int):
-        self._right_panel_visible = False
+        self._right_panel_visible = True
         self._sync_header_panel_buttons()
         self._capture_snapshot(clear_redo=True)
 
@@ -3298,16 +3337,18 @@ class MLTrainerApp(QMainWindow):
         self._open_models_panel()
 
     def _toggle_results_panel(self, checked: bool):
-        self._set_results_dialog_visible(bool(checked))
+        _ = checked
+        self._set_results_dialog_visible(True)
+        self._go_to_step(3)
         self._capture_snapshot(clear_redo=True)
 
     def closeEvent(self, event):
         settings = QSettings()
         settings.setValue("ui/geometry", self.saveGeometry())
-        self._right_panel_visible = self._is_results_dialog_visible()
+        self._right_panel_visible = True
         settings.setValue("ui/layoutVersion", UI_LAYOUT_VERSION)
         settings.setValue("ui/leftPanelVisible", self._left_panel_visible)
-        settings.setValue("ui/rightPanelVisible", self._right_panel_visible)
+        settings.setValue("ui/rightPanelVisible", True)
         settings.setValue("ui/eventLog", self._event_log[-250:])
         self._save_recovery_checkpoint()
         self._mark_session_clean()
@@ -3570,6 +3611,52 @@ class MLTrainerApp(QMainWindow):
     def _on_shap_settings(self):
         dlg = ShapSettingsDialog(self)
         dlg.exec()
+
+    def _open_hyperparameter_dialog(self, model_name: str):
+        """Open the per-model hyperparameter dialog and persist the result.
+
+        Values are stored in ``self.state.model_hyperparams`` (SSOT) and passed
+        directly to the estimator at training time (see training_runner and
+        models.train). Unchanged models keep using sklearn defaults.
+        """
+        from interface.widgets.hyperparameter_dialog import HyperparameterDialog
+        from models.hyperparameters import has_schema
+
+        if not has_schema(model_name):
+            QMessageBox.information(
+                self,
+                tr("dialogs.hyperparameters.title", default="Configure: {model}", model=model_name),
+                tr(
+                    "dialogs.hyperparameters.no_schema",
+                    default="This model has no user-configurable hyperparameters.",
+                ),
+            )
+            return
+
+        current = dict(getattr(self.state, "model_hyperparams", {}).get(model_name, {}))
+        dlg = HyperparameterDialog(model_name, current=current, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            values = dlg.values()
+            if not hasattr(self.state, "model_hyperparams") or self.state.model_hyperparams is None:
+                self.state.model_hyperparams = {}
+            self.state.model_hyperparams[model_name] = values
+            self._on_user_setting_changed()
+            self._push_notification(
+                "info",
+                tr(
+                    "notifications.hyperparameters_saved",
+                    default="Custom hyperparameters saved for {model}.",
+                    model=model_name,
+                ),
+            )
+            self.statusBar().showMessage(
+                tr(
+                    "status.hyperparameters_saved",
+                    default="Hyperparameters updated for {model}.",
+                    model=model_name,
+                )
+            )
+            self._refresh_model_summary_debounced()
 
     def _on_about(self):
         dlg = AboutDialog(self)
@@ -3845,6 +3932,7 @@ class MLTrainerApp(QMainWindow):
         c.cancel_button.setEnabled(False)
         c.cancel_button.setVisible(False)
         self._set_controls_for_run_state(False)
+        self._set_train_stage("setup")
         self._on_cv_mode_changed(c.cv_mode_combo.currentText())
         self.statusBar().showMessage(tr("status.training_complete_sec", default="Training complete in {seconds:.1f}s", seconds=elapsed))
         c.kpi_run_value.setText(tr("status.kpi.done_sec", default="Done ({seconds:.1f}s)", seconds=elapsed))
@@ -3928,6 +4016,7 @@ class MLTrainerApp(QMainWindow):
         c.cancel_button.setEnabled(False)
         c.cancel_button.setVisible(False)
         self._set_controls_for_run_state(False)
+        self._set_train_stage("setup")
         self._on_cv_mode_changed(c.cv_mode_combo.currentText())
         c.kpi_run_value.setText(
             tr("status.cancelled", default="Cancelled") if was_cancelled else tr("status.failed", default="Failed")
@@ -4025,6 +4114,11 @@ class MLTrainerApp(QMainWindow):
         selected_plots = list(request["selected_plots"])
         cv_mode = str(request["cv_mode"])
         cv_folds = int(request["cv_folds"])
+        request_hparams = {
+            str(name): dict(params)
+            for name, params in dict(request.get("model_hyperparams", {}) or {}).items()
+            if isinstance(params, dict)
+        }
         persist_outputs = bool(c.persist_output_checkbox.isChecked()) if hasattr(c, "persist_output_checkbox") else True
 
         active_job = self._job_by_id(self._launch_job_id)
@@ -4096,6 +4190,7 @@ class MLTrainerApp(QMainWindow):
         # Prepare UI
         self._run_started_at = time.monotonic()
         self._plot_started_at = None
+        self._set_train_stage("active")
         c.progress_panel.setVisible(True)
         c.progress_phase_label.setText(tr("status.phase_training", default="Phase 1/2: Model Training"))
         c.progress_timing_label.setText(tr("status.elapsed_eta_calculating", default="Elapsed: 0s | ETA: calculating..."))
@@ -4206,6 +4301,14 @@ class MLTrainerApp(QMainWindow):
         self._thread = None
         self._worker = None
         
+        # Inject the hyperparameters into the effective_state so the training
+        # adapter picks them up via state.model_hyperparams. This keeps the
+        # worker signature stable while still honoring queued-job overrides.
+        try:
+            effective_state.model_hyperparams = dict(request_hparams)
+        except Exception:
+            LOGGER.exception("Could not attach model_hyperparams to effective_state")
+
         self._thread = QThread(self)
         self._worker = _TrainWorker(
             effective_state, selected_models, selected_plots, cv_mode, cv_folds,
@@ -4268,7 +4371,7 @@ class MLTrainerApp(QMainWindow):
             c.model_picker.setEnabled(False)
         c.cancel_button.setEnabled(False)
         c.cancel_button.setVisible(False)
-        c.progress_panel.setVisible(False)
+        self._set_train_stage("setup")
         c.progress_phase_label.setText(tr("status.idle", default="Idle"))
         c.progress_train_stats_label.setText("0/0 (0%)")
         c.progress_plot_stats_label.setText("0/0 (0%)")
@@ -4431,21 +4534,28 @@ class MLTrainerApp(QMainWindow):
                 self.state.fe_config = new_config
                 self._capture_snapshot(clear_redo=True)
 
-            if dlg.export_requested and self.state.dataset_path:
+            if dlg.export_requested:
                 from features.feature_engineering import generate_static_fe_dataset
                 from PySide6.QtWidgets import QMessageBox
-                import pandas as pd
                 import os
-                
-                try:
-                    df = pd.read_csv(self.state.dataset_path)
-                except Exception as e:
-                    QMessageBox.warning(self, tr("error.dataset_load", default="Dataset Load Error"), f"Could not load dataset for FE static export.\n{e}")
+
+                if self.state.df is None:
+                    QMessageBox.warning(
+                        self,
+                        tr("error.dataset_load", default="Dataset Load Error"),
+                        "No dataset loaded. Load a dataset before exporting.",
+                    )
                     return
-                    
-                target = getattr(self.state, "target_col", None)
-                out_dir = os.path.dirname(self.state.dataset_path)
-                base_name = os.path.splitext(os.path.basename(self.state.dataset_path))[0]
+
+                df = self.state.df
+                target = getattr(self.state, "target", None)
+                dataset_path = getattr(self.state, "dataset_path", None) or ""
+                out_dir = os.path.dirname(dataset_path) if dataset_path else os.getcwd()
+                base_name = (
+                    os.path.splitext(os.path.basename(dataset_path))[0]
+                    if dataset_path
+                    else "dataset"
+                )
                 out_file = f"{base_name}_engineered.csv"
                 
                 QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)

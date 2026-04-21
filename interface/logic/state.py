@@ -23,9 +23,12 @@ class AppState:
             "transform": "yeo-johnson",
             "missing_indicators": True,
             "outliers": "winsorize_1_99",
+            "binning": "none",
+            "n_bins": 5,
             "poly_features": False,
             "poly_degree": 2,
-            "poly_max": 50
+            "poly_max": 50,
+            "interaction_only": False,
         }
         # Optional pre-training Publication Studio profile (naming/value rules, metadata).
         self.studio_profile = {}
@@ -35,6 +38,10 @@ class AppState:
         self.cv_mode = "repeated"
         self.cv_folds = 5
         self.persist_outputs = True
+        # {model_name: {param_name: value}} user overrides from the gear
+        # settings dialog on each model card. An empty/absent entry means
+        # "use baseline defaults" (see models/hyperparameters.py).
+        self.model_hyperparams: dict[str, dict[str, object]] = {}
 
 
     def load_dataset(self, path: str) -> pd.DataFrame:
