@@ -1,7 +1,7 @@
 """
 Run-scoped calibration summaries and cumulative feature-importance reports.
 
-Path policy: reads canonical folders first; legacy fallback remains supported via run metadata.
+Path policy: canonical folders only.
 
 Preferred runtime (from GUI optional analysis runner):
 - MLTRAINER_RUN_ROOT=<.../output/runs/<run_id>>

@@ -1,7 +1,7 @@
 """
 Diagnostics for best model: residual plots and heteroskedasticity test.
 
-Path policy: writes to canonical folders first, with legacy fallback reads for older runs.
+Path policy: canonical folders only.
 Outputs:
 - output/diagnostics/residuals.png
 - output/diagnostics/residual_distribution.png
@@ -11,7 +11,7 @@ Outputs:
 from __future__ import annotations
 
 import os
-from utils.paths import DIAGNOSTICS_DIR, EVALUATION_DIR, FEATURE_SELECTION_DIR, LEGACY_FEATURE_SELECTION_DIR
+from utils.paths import DIAGNOSTICS_DIR, EVALUATION_DIR, FEATURE_SELECTION_DIR
 import json
 import pandas as pd
 from statsmodels.stats.diagnostic import het_breuschpagan
@@ -66,8 +66,6 @@ def load_best_meta():
                             meta = {'best_model': best_model}
                             # Also try loading feature list from selection if available
                             sel = os.path.join(RUN_ROOT, FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
-                            if not os.path.exists(sel):
-                                sel = os.path.join(RUN_ROOT, LEGACY_FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
                             if os.path.exists(sel):
                                 with open(sel, 'r', encoding='utf-8') as f:
                                     sel_data = json.load(f)
@@ -79,8 +77,6 @@ def load_best_meta():
 
         # Fallback to feature_selection_meta.json if manifest/metrics didn't work but we have RUN_ROOT
         sel = os.path.join(RUN_ROOT, FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
-        if not os.path.exists(sel):
-            sel = os.path.join(RUN_ROOT, LEGACY_FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
         if os.path.exists(sel):
             try:
                 with open(sel, 'r', encoding='utf-8') as f:

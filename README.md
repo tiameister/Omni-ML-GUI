@@ -98,7 +98,6 @@ output/runs/test_run_.../
 └── Run_Log_and_Warnings.md
 ```
 
-Legacy folders (`0_Feature_Selection`, `1_Overall_Evaluation`, `2_Model_Diagnostics`, `3_Manuscript_Figures`) are still recognized for backward compatibility when loading older runs.
 
 
 ## Batch Execution (For Advanced Users)

@@ -15,8 +15,6 @@ from utils.logger import get_logger
 from utils.paths import (
     EVALUATION_DIR,
     FEATURE_SELECTION_DIR,
-    LEGACY_EVALUATION_DIR,
-    LEGACY_FEATURE_SELECTION_DIR,
     build_run_path_map,
     get_run_model_dir,
     get_run_model_root,
@@ -52,27 +50,29 @@ def _raise_if_cancelled(should_cancel):
         raise RuntimeError("Cancelled by user")
 
 
-def _ensure_legacy_bridge(legacy_path: str, canonical_path: str) -> None:
-    """Create a legacy->canonical symlink bridge to avoid duplicate files."""
-    legacy = str(legacy_path or "").strip()
-    canonical = str(canonical_path or "").strip()
-    if not legacy or not canonical:
-        return
-    if os.path.realpath(legacy) == os.path.realpath(canonical):
-        return
-    if os.path.islink(legacy):
-        try:
-            if os.path.realpath(legacy) == os.path.realpath(canonical):
-                return
-        except Exception:
-            pass
-    if os.path.exists(legacy):
-        # Keep existing legacy paths untouched for safety.
-        return
-    try:
-        os.symlink(canonical, legacy, target_is_directory=True)
-    except Exception:
-        LOGGER.exception("Failed to create legacy bridge: %s -> %s", legacy, canonical)
+def _write_run_structure_guide(run_root: str, *, metrics_dir: str, feature_selection_dir: str, models_dir: str, analysis_dir: str) -> None:
+    """Write a human-readable map of the run folder structure."""
+    guide_path = os.path.join(run_root, "RUN_STRUCTURE.txt")
+    lines = [
+        "MLTrainer Run Output Structure",
+        "============================",
+        "",
+        f"Run root: {run_root}",
+        "",
+        "Canonical folders:",
+        f"- metrics/: model comparison tables/charts and optional analysis summaries ({metrics_dir})",
+        f"- feature_selection/: selected-feature provenance ({feature_selection_dir})",
+        f"- models/: per-model artifacts (diagnostics, explainability, model files) ({models_dir})",
+        f"- analysis/: optional script outputs (validation, xai consistency, reports) ({analysis_dir})",
+        "",
+        "Key files:",
+        "- run_manifest.json: machine-readable metadata + resolved paths",
+        "- experiment_metadata.json: experiment summary payload",
+        "- dataset_for_optional_scripts.csv: run-scoped dataset snapshot for optional scripts",
+        "",
+    ]
+    with open(guide_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines))
 
 
 def _project_root_dir() -> str:
@@ -381,11 +381,11 @@ def run_training(
         "path_map": dict(path_map),
     }
 
-    analysis_root = str(path_map.get("metrics", os.path.join(run_outdir, EVALUATION_DIR)))
-    os.makedirs(analysis_root, exist_ok=True)
-    out_info["analysis_dir"] = analysis_root
-    out_info["analysis_dir_legacy"] = str(path_map.get("evaluation_legacy", os.path.join(run_outdir, LEGACY_EVALUATION_DIR)))
-    _ensure_legacy_bridge(out_info["analysis_dir_legacy"], analysis_root)
+    metrics_root = str(path_map.get("metrics", os.path.join(run_outdir, EVALUATION_DIR)))
+    os.makedirs(metrics_root, exist_ok=True)
+    out_info["analysis_dir"] = metrics_root
+    optional_analysis_root = os.path.join(run_outdir, "analysis")
+    os.makedirs(optional_analysis_root, exist_ok=True)
     model_root = str(path_map.get("models_root", get_run_model_root(run_root)))
     out_info["model_dir"] = model_root
     supplements_root = str(path_map.get("supplements_root", get_supplements_root(run_root=run_root)))
@@ -423,8 +423,6 @@ def run_training(
     selection_dir = str(path_map.get("feature_selection", os.path.join(run_outdir, FEATURE_SELECTION_DIR)))
     os.makedirs(selection_dir, exist_ok=True)
     out_info["selection_dir"] = selection_dir
-    out_info["selection_dir_legacy"] = str(path_map.get("feature_selection_legacy", os.path.join(run_outdir, LEGACY_FEATURE_SELECTION_DIR)))
-    _ensure_legacy_bridge(out_info["selection_dir_legacy"], selection_dir)
     try:
         selected_feats = list(features or [])
         target_col = str(target or "")
@@ -457,6 +455,25 @@ def run_training(
 
     except Exception:
         LOGGER.exception("Failed to persist feature selection provenance")
+
+    try:
+        os.makedirs(optional_analysis_root, exist_ok=True)
+        analysis_readme = os.path.join(optional_analysis_root, "README.txt")
+        if not os.path.exists(analysis_readme):
+            with open(analysis_readme, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "Optional analysis outputs are written to this folder.\n"
+                    "Subfolders are created by selected extra-analysis scripts.\n"
+                )
+        _write_run_structure_guide(
+            run_outdir,
+            metrics_dir=metrics_root,
+            feature_selection_dir=selection_dir,
+            models_dir=model_root,
+            analysis_dir=optional_analysis_root,
+        )
+    except Exception:
+        LOGGER.exception("Failed to write run structure guide")
 
     outdir_by_model: dict[str, str] = {}
 
@@ -570,9 +587,8 @@ def run_training(
             "paths": {
                 "run_root": run_outdir,
                 "models_root": model_root,
-                "evaluation_legacy": str(path_map.get("evaluation_legacy", os.path.join(run_outdir, LEGACY_EVALUATION_DIR))),
-                "feature_selection_legacy": str(path_map.get("feature_selection_legacy", os.path.join(run_outdir, LEGACY_FEATURE_SELECTION_DIR))),
                 "supplements_root": supplements_root,
+                "analysis_root": optional_analysis_root,
                 "metrics": str(path_map.get("metrics", "")),
                 "feature_selection": str(path_map.get("feature_selection", "")),
             },
@@ -874,7 +890,7 @@ def run_training(
 
     if optional_scripts:
         _safe_call(callbacks.log, f"Running {len(optional_scripts)} extra analysis task(s)...", context="log")
-        _safe_call(callbacks.log, f"Extra analysis output folder: {analysis_root}", context="log")
+        _safe_call(callbacks.log, f"Extra analysis output folder: {optional_analysis_root}", context="log")
     dataset_path_for_scripts = str(os.environ.get("DATASET_PATH", "") or "").strip()
     if optional_scripts and (not dataset_path_for_scripts or not os.path.exists(dataset_path_for_scripts)):
         # Provide a deterministic dataset path for script packs that require raw data.
@@ -894,7 +910,7 @@ def run_training(
             "OUTPUT_ROOT_DIR": run_outdir,
             "RUN_TAG": "",
             "MLTRAINER_RUN_ROOT": run_outdir,
-            "MLTRAINER_ANALYSIS_ROOT": analysis_root,
+            "MLTRAINER_ANALYSIS_ROOT": optional_analysis_root,
             "MLTRAINER_SUPPLEMENTS_ROOT": supplements_root,
             "TARGET_COL": str(target),
             "SELECTED_FEATURES": json.dumps(list(features or []), ensure_ascii=False),

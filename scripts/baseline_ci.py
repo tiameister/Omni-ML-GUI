@@ -1,7 +1,7 @@
 """
 Baseline vs. Best Model with 95% Bootstrap CIs.
 
-Path policy: writes to canonical folders first, with legacy fallback reads for older runs.
+Path policy: canonical folders only.
 Outputs:
 - output/baseline/baseline_metrics.xlsx
 - output/baseline/baseline_vs_best.txt
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import json
-from utils.paths import EVALUATION_DIR, FEATURE_SELECTION_DIR, LEGACY_FEATURE_SELECTION_DIR
+from utils.paths import EVALUATION_DIR, FEATURE_SELECTION_DIR
 from typing import Tuple
 
 import numpy as np
@@ -83,8 +83,6 @@ def main():
                             if best_model:
                                 meta = {'best_model': best_model}
                                 sel = os.path.join(run_root, FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
-                                if not os.path.exists(sel):
-                                    sel = os.path.join(run_root, LEGACY_FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
                                 if os.path.exists(sel):
                                     with open(sel, 'r', encoding='utf-8') as f:
                                         sel_data = json.load(f)
@@ -95,8 +93,6 @@ def main():
                         LOGGER.exception("Failed reading metrics workbook: %s", metrics_xlsx)
 
             sel = os.path.join(run_root, FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
-            if not os.path.exists(sel):
-                sel = os.path.join(run_root, LEGACY_FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
             if os.path.exists(sel):
                 try:
                     with open(sel, 'r', encoding='utf-8') as f:

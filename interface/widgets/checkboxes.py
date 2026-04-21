@@ -22,12 +22,6 @@ from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 
 
-LEGACY_PAGE_TITLES = {
-    "Model Fit": "📊 Model Fit",
-    "Diagnostics": "🔍 Diagnostics",
-    "Explainability": "📈 Explainability",
-}
-
 _SCRIPT_CATEGORY_ORDER = [
     "insights",
     "validation",
@@ -611,9 +605,6 @@ def apply_settings_to_checks(
     for chk in checks:
         key = f"plots/{title}/{chk.text()}"
         val = settings.value(key, None)
-        if val is None and title in LEGACY_PAGE_TITLES:
-            legacy_key = f"plots/{LEGACY_PAGE_TITLES[title]}/{chk.text()}"
-            val = settings.value(legacy_key, None)
         if val is None:
             # Keep regular plots enabled by default, but extra analyses disabled.
             chk.setChecked(chk.text() not in script_labels)

@@ -1,7 +1,7 @@
 """
 Compose SHAP summary + dependence plots into a single figure.
 
-Path policy: reads canonical folders first, then legacy manuscript folders for older runs.
+Path policy: canonical folders only.
 
 Searches for SHAP exports saved by generate_shap_summary() under:
   <run_root>/models/<model_name>/figures/<model_key>/
@@ -23,7 +23,7 @@ from __future__ import annotations
 import glob
 import os
 from typing import Dict, List
-from utils.paths import LEGACY_MANUSCRIPT_DIR, MANUSCRIPT_DIR
+from utils.paths import MANUSCRIPT_DIR
 
 import matplotlib.pyplot as plt
 from matplotlib.image import imread
@@ -34,10 +34,7 @@ def find_rf_shap_dir(base: str, run_root: str | None = None) -> str | None:
     if run_root and os.path.isdir(run_root):
         candidates.extend(glob.glob(os.path.join(run_root, "models", "*", MANUSCRIPT_DIR)))
         candidates.extend(glob.glob(os.path.join(run_root, "models", "*", MANUSCRIPT_DIR, "*")))
-        candidates.extend(glob.glob(os.path.join(run_root, "models", "*", LEGACY_MANUSCRIPT_DIR)))
-        candidates.extend(glob.glob(os.path.join(run_root, "models", "*", LEGACY_MANUSCRIPT_DIR, "*")))
     candidates.extend(glob.glob(os.path.join(base, "output", "*_output*", MANUSCRIPT_DIR)))
-    candidates.extend(glob.glob(os.path.join(base, "output", "*_output*", LEGACY_MANUSCRIPT_DIR)))
     candidates = sorted(set(candidates), key=lambda p: (len(p), p), reverse=True)
     for p in candidates:
         # Check presence of core images

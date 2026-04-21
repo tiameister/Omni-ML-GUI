@@ -27,18 +27,16 @@ MODELS = ['RandomForest', 'HistGB', 'XGBoost']  # XGBoost included if importance
 
 
 def load_importances(model: str, collapse_levels: bool = True) -> pd.DataFrame:
-    # Look for modern xlsx exports first, then legacy csv exports.
+    # Look for canonical xlsx exports first, then csv exports.
     cand: list[tuple[float, str]] = []
     run_root = os.environ.get("MLTRAINER_RUN_ROOT", "").strip()
     search_dirs = [run_root] if (run_root and os.path.isdir(run_root)) else [os.path.join(ROOT, "output")]
 
     for search_dir in search_dirs:
-        # Canonical/legacy model figure trees.
+        # Canonical model figure tree.
         for p in glob.glob(os.path.join(search_dir, "models", "*", MANUSCRIPT_DIR, "*", f"{model}_feature_importance.xlsx")):
             cand.append((os.path.getmtime(p), p))
-        for p in glob.glob(os.path.join(search_dir, "models", "*", "3_Manuscript_Figures", "*", f"{model}_feature_importance.xlsx")):
-            cand.append((os.path.getmtime(p), p))
-        # Legacy csv exports.
+        # CSV exports from utility scripts.
         for root_dir, _, files in os.walk(search_dir):
             fname = f'feature_importance_{model}.csv'
             if fname in files:
@@ -145,7 +143,7 @@ def bootstrap_stability(
     Returns
     -------
     (stab_topk, rank_metrics)
-      stab_topk: legacy style with top10 inclusion frequency.
+      stab_topk: top-k inclusion frequency summary.
       rank_metrics: extended metrics with rank distribution statistics.
     """
     rng = np.random.default_rng(seed)
@@ -196,7 +194,7 @@ def bootstrap_stability(
         for f in top5: top5_counts[f] += 1
         for f in top10: top10_counts[f] += 1
 
-    # Build legacy style
+    # Build top-k summary table
     stab = pd.DataFrame({'feature': feats, 'top10_freq': [top10_counts[f] for f in feats]})
     stab['top10_pct'] = stab['top10_freq'] / float(B)
 

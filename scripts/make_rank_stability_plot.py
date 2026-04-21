@@ -1,6 +1,6 @@
 """Create Q1-level feature stability visualization combining rank distribution and inclusion probabilities.
 
-Path policy: reads canonical folders first; legacy fallback remains supported via run metadata.
+Path policy: canonical folders only.
 
 Data sources (produced by xai_consistency.py):
  - output/xai_consistency/bootstrap_rank_metrics.csv

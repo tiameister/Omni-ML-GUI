@@ -56,7 +56,7 @@ from interface.widgets.checkboxes import get_plot_pages, get_optional_script_lab
 from data.file_types import SUPPORTED_DATASET_EXTENSIONS
 from config import OUTPUT_DIR, RUN_TAG
 from utils.logger import get_logger
-from utils.paths import EVALUATION_DIR, LEGACY_EVALUATION_DIR, LEGACY_FEATURE_SELECTION_DIR, LEGACY_MANUSCRIPT_DIR, MANUSCRIPT_DIR, get_output_root, get_project_root, safe_folder_name
+from utils.paths import EVALUATION_DIR, MANUSCRIPT_DIR, get_output_root, get_project_root, safe_folder_name
 from utils.text import normalize_quotes_ascii
 from utils.localization import i18n, tr
 
@@ -2920,7 +2920,7 @@ class MLTrainerApp(QMainWindow):
             fe_prefix = "feature_engineering_" if getattr(self.state, "fe_enabled", False) else ""
             # R² bar chart is saved under canonical evaluation directory.
             r2_base = f"{fe_prefix}metrics_R2_cv.png" if fe_prefix else "metrics_R2_cv.png"
-            r2_parent = run_paths.get("metrics") or run_paths.get("evaluation_legacy") or self._latest_result_dir
+            r2_parent = run_paths.get("metrics") or self._latest_result_dir
             r2_png = os.path.join(r2_parent, r2_base)
             if os.path.exists(r2_png):
                 self._load_image_to_label(r2_png, c.figures_img)
@@ -2938,14 +2938,8 @@ class MLTrainerApp(QMainWindow):
                     f"{shap_model_key}_shap_summary_beeswarm.png",
                 )
                 if not os.path.exists(shap_png):
-                    shap_png = os.path.join(
-                        run_paths.get("models_root", os.path.join(self._latest_result_dir, "models")),
-                        safe_folder_name(best, fallback="model"),
-                        run_paths.get("figures_legacy", LEGACY_MANUSCRIPT_DIR),
-                        shap_model_key,
-                        f"{shap_model_key}_shap_summary_beeswarm.png",
-                    )
-                if os.path.exists(shap_png):
+                    shap_png = ""
+                if shap_png and os.path.exists(shap_png):
                     self._load_image_to_label(shap_png, c.shap_img)
 
         self._sync_results_ui_state()
@@ -2974,10 +2968,9 @@ class MLTrainerApp(QMainWindow):
         run_dir_s = str(run_dir or "")
         if run_dir_s:
             resolved.setdefault("metrics", os.path.join(run_dir_s, EVALUATION_DIR))
-            resolved.setdefault("evaluation_legacy", os.path.join(run_dir_s, LEGACY_EVALUATION_DIR))
-            resolved.setdefault("feature_selection_legacy", os.path.join(run_dir_s, LEGACY_FEATURE_SELECTION_DIR))
-            resolved.setdefault("figures_legacy", os.path.join(run_dir_s, LEGACY_MANUSCRIPT_DIR))
+            resolved.setdefault("feature_selection", os.path.join(run_dir_s, "feature_selection"))
             resolved.setdefault("models_root", os.path.join(run_dir_s, "models"))
+            resolved.setdefault("analysis_root", os.path.join(run_dir_s, "analysis"))
             resolved.setdefault("supplements_root", os.path.join(run_dir_s, "analysis", "supplements"))
         return resolved
 

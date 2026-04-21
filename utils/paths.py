@@ -164,27 +164,16 @@ MANUSCRIPT_DIR = "figures"
 MODELS_DIR = "models"
 METRICS_DIR = "metrics"
 FEATURE_SELECTION_DIR = "feature_selection"
-LEGACY_EVALUATION_DIR = "1_Overall_Evaluation"
-LEGACY_FEATURE_SELECTION_DIR = "0_Feature_Selection"
-LEGACY_MANUSCRIPT_DIR = "3_Manuscript_Figures"
 
 
 def build_run_path_map(run_root: str | Path) -> dict[str, str]:
-    """Return canonical + legacy run subdirectory map (all created)."""
+    """Return canonical run subdirectory map (all created)."""
     root = Path(run_root)
     mapping = {
-        # Canonical schema (target)
         "metrics": str(ensure_directory(root / METRICS_DIR)),
         "feature_selection": str(ensure_directory(root / FEATURE_SELECTION_DIR)),
         "diagnostics": str(ensure_directory(root / DIAGNOSTICS_DIR)),
         "figures": str(ensure_directory(root / MANUSCRIPT_DIR)),
-        # Legacy schema (compatibility)
-        # Do not create legacy dirs eagerly; runtime can map them as symlinks to
-        # canonical folders to avoid duplicate artifact copies.
-        "evaluation_legacy": str(root / LEGACY_EVALUATION_DIR),
-        "feature_selection_legacy": str(root / LEGACY_FEATURE_SELECTION_DIR),
-        "diagnostics_legacy": str(root / "2_Model_Diagnostics"),
-        "figures_legacy": str(root / LEGACY_MANUSCRIPT_DIR),
         "models_root": str(ensure_directory(root / MODELS_DIR)),
         "supplements_root": str(ensure_directory(root / "analysis" / "supplements")),
     }

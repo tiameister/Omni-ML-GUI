@@ -1,6 +1,6 @@
 """Generate ranked bar chart of bootstrap Top-10 inclusion probability.
 
-Path policy: reads canonical folders first; legacy fallback remains supported via run metadata.
+Path policy: canonical folders only.
 
 Replaces previous heatmap visualization with a cleaner, reviewer-friendly horizontal bar chart.
 

@@ -1,6 +1,6 @@
 """
 Statistical tests across CV strategies or models using per-split scores.
-Path policy: reads canonical folders first; legacy fallback remains supported via run metadata.
+Path policy: canonical folders only.
 Outputs:
 - Corrected Resampled T-tests between top models and baselines
 - FDR Adjusted p-values
