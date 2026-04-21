@@ -1,7 +1,7 @@
 
 # Omni-ML-GUI (Omni-Machine Learning Studio)
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19649882.svg)](https://doi.org/10.5281/zenodo.19649882)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19649882-blue)](https://doi.org/10.5281/zenodo.19649882)
 
 **A No-Code Machine Learning & XAI Workbench for Researchers and Students**
 

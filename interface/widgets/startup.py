@@ -159,7 +159,7 @@ class StartupDialog(QDialog):
                 LOGGER.exception("Guide open failed")
         self.btn_guide.clicked.connect(_guide)
 
-        if not os.path.exists(os.path.join(proj_root, 'info.pdf')):
+        if not os.path.exists(str(_get_project_root() / "info.pdf")):
             self.btn_guide.setEnabled(False)
             self.btn_guide.setToolTip(tr("startup.guide_not_found_tip", default="Local guide not found."))
 
