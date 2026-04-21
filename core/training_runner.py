@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -378,6 +379,24 @@ def run_training(
         fe_prefix = "feature_engineering_" if fe_enabled else ""
         save_model_metrics(run_outdir, metrics_df, filename_prefix=fe_prefix)
         save_cv_splits(run_outdir, {name: m.get("cv_scores", {}) for name, m in fitted_models.items()})
+        # Compatibility bridge: mirror canonical metrics outputs to legacy folder
+        # when different paths are used, so older readers/scripts still work.
+        legacy_eval_dir = str(path_map.get("evaluation_legacy", ""))
+        if legacy_eval_dir and os.path.realpath(legacy_eval_dir) != os.path.realpath(analysis_root):
+            os.makedirs(legacy_eval_dir, exist_ok=True)
+            for artifact_name in (
+                f"{fe_prefix}metrics.xlsx" if fe_prefix else "metrics.xlsx",
+                "cv_splits.xlsx",
+                f"{fe_prefix}metrics_R2_cv.png" if fe_prefix else "metrics_R2_cv.png",
+                f"{fe_prefix}metrics_RMSE_cv.png" if fe_prefix else "metrics_RMSE_cv.png",
+            ):
+                src = os.path.join(analysis_root, artifact_name)
+                dst = os.path.join(legacy_eval_dir, artifact_name)
+                if os.path.exists(src):
+                    try:
+                        shutil.copy2(src, dst)
+                    except Exception:
+                        LOGGER.exception("Failed to mirror legacy evaluation artifact: %s", artifact_name)
 
     # Persist fitted pipelines in a deterministic model subtree.
     try:
