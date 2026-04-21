@@ -26,3 +26,12 @@ class ConfigError(AppError):
     out-of-range numeric options, or unrecognised enum values.
     """
 
+
+class DataValidationError(AppError):
+    """Raised when the training input fails the strict pre-flight check.
+
+    Callers: ``core.data_validation`` — surfaced before the training
+    worker thread is spawned so the user gets a friendly GUI warning
+    instead of a cryptic stack trace from deep inside scikit-learn.
+    """
+

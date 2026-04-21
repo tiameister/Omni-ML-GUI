@@ -1,3 +1,4 @@
+"""Run the ML Trainer GUI."""
 from utils.logger import configure_logging
 
 

@@ -292,22 +292,31 @@ def run_training(
     # receives a clean dict it can trust (and so the run manifest records
     # exactly the values that reached the estimators).
     sanitized_hparams: dict[str, dict[str, object]] = {}
+    preset_choices: dict[str, str] = {}  # {model: preset_id or "__custom__"}
     if model_hyperparams:
         try:
             from models.hyperparameters import has_schema, sanitize_hyperparams
+            from models.hyperparameter_presets import CUSTOM_PRESET_ID, match_preset
 
             for model_name, raw in dict(model_hyperparams).items():
                 name = str(model_name)
                 if name in selected_models and has_schema(name) and isinstance(raw, dict):
-                    sanitized_hparams[name] = sanitize_hyperparams(name, raw)
+                    clean = sanitize_hyperparams(name, raw)
+                    sanitized_hparams[name] = clean
+                    preset_choices[name] = match_preset(name, clean) or CUSTOM_PRESET_ID
         except Exception:
             LOGGER.exception("Could not sanitize model_hyperparams; using defaults")
             sanitized_hparams = {}
+            preset_choices = {}
 
     if sanitized_hparams:
+        preset_summary = ", ".join(
+            f"{name} [{preset_choices.get(name, 'custom')}]"
+            for name in sorted(sanitized_hparams)
+        )
         _safe_call(
             callbacks.log,
-            f"Custom hyperparameters applied for: {', '.join(sorted(sanitized_hparams))}",
+            f"Custom hyperparameters applied for: {preset_summary}",
             context="log",
         )
 
@@ -521,6 +530,10 @@ def run_training(
             },
             "model_hyperparams": {
                 name: dict(params) for name, params in sanitized_hparams.items()
+            },
+            "model_hyperparam_presets": {
+                name: preset_choices.get(name, "__custom__")
+                for name in sanitized_hparams
             },
         }
         with open(os.path.join(run_outdir, "run_manifest.json"), "w", encoding="utf-8") as f:

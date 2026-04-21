@@ -165,8 +165,6 @@ def apply_translations(w):
     except Exception as e:
         import logging
         logging.debug(f"Failed to set status_label: {e}")
-    if hasattr(w, "results_save_status"):
-        w.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
 
     if hasattr(w, "feedback_event_label"):
         w.feedback_event_label.setText(
@@ -188,20 +186,9 @@ def apply_translations(w):
     w.kpi_target_title.setText(tr("controls.kpi.target", default="Target"))
     w.kpi_run_title.setText(tr("controls.kpi.run", default="Run"))
 
-    w.result_box.setPlaceholderText(
-        tr("controls.results.training_summary_placeholder", default="Training summary and model ranking will appear here.")
-    )
-    w.stats_box.setPlaceholderText(
-        tr("controls.results.stats_placeholder", default="Statistical diagnostics will appear here.")
-    )
     w.log_box.setPlaceholderText(
         tr("controls.results.logs_placeholder", default="Execution logs will appear here.")
     )
-    if hasattr(w, "results_save_button"):
-        w.results_save_button.setText(tr("controls.results.save_this_run", default="Save This Run"))
-        w.results_save_button.setToolTip(
-            tr("controls.results.save_tooltip", default="Persist current temporary run outputs into output/runs.")
-        )
     w.results_summary_text.setPlaceholderText(
         tr("controls.results.best_model_placeholder", default="Best model summary will appear here after training.")
     )
@@ -482,13 +469,6 @@ def build_layout():
     
     # Selection badge goes into the subtitle dynamically
     w.selection_label = w.vars_target_subtitle
-
-    # Optional hint area (kept for compatibility with older controller logic)
-    w.vars_blocked_hint = QLabel("")
-    w.vars_blocked_hint.setObjectName("hintLabel")
-    w.vars_blocked_hint.setWordWrap(True)
-    w.vars_blocked_hint.setVisible(False)
-    variables_layout.addWidget(w.vars_blocked_hint)
 
     variables_layout.addWidget(row1)
 
@@ -824,11 +804,7 @@ def build_layout():
     tg_card.setVisible(False)
     rn_card.setVisible(False)
 
-    # Results and statistics text areas and tables
-    w.result_box = QTextEdit(); w.result_box.setReadOnly(True)
-    w.result_box.setPlaceholderText("Training summary and model ranking will appear here.")
-    w.stats_box = QTextEdit(); w.stats_box.setReadOnly(True)
-    w.stats_box.setPlaceholderText("Statistical diagnostics will appear here.")
+    # Logs and result tables
     w.log_box = QTextEdit(); w.log_box.setReadOnly(True)
     w.log_box.setPlaceholderText("Execution logs will appear here.")
     # Compact tables
@@ -852,10 +828,8 @@ def build_layout():
         mono.setPointSize(10)
     except Exception:
         mono = QFont("Monospace", 10)
-    w.result_box.setFont(mono)
-    w.result_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-    w.stats_box.setFont(mono)
-    w.stats_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+    w.log_box.setFont(mono)
+    w.log_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
 
     # Results Hub
     results_tab = QWidget()

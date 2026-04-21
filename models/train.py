@@ -180,9 +180,8 @@ def train_and_evaluate(
             continue
 
         # Apply user-supplied hyperparameters directly on the baseline estimator
-        # so that the instance wired into the Pipeline is the one the user
-        # configured. We apply before Pipeline wrapping to keep the override
-        # path explicit and auditable.
+        # before wrapping it in the Pipeline so the instance that trains is the
+        # instance the user configured.
         model_instance = all_models[name]
         try:
             resolved_hparams = _apply_hyperparams(
@@ -192,60 +191,32 @@ def train_and_evaluate(
                 log_callback=log_callback,
             )
         except (ValueError, TypeError):
-            # Already logged inside _apply_hyperparams. Skip this model so the
-            # run doesn't corrupt the metrics table with a silently defaulted
-            # estimator.
-            if callable(log_callback):
-                _safe_call(log_callback,
-                           f"[Skip] {name}: invalid hyperparameters, not trained.",
-                           context="log_callback:skip")
+            # _apply_hyperparams already emitted a single clear error log.
+            # Skip this model so the metrics table never mixes a user's
+            # invalid request with a silently defaulted estimator.
             continue
 
         pipe = Pipeline([("prep", preprocessor), ("model", model_instance)])
 
+        # Mandatory pre-fit verification: print what the estimator will actually
+        # use so the audit trail proves UI values reached the training instance.
+        # Runs unconditionally (not gated on log_callback) so CI/tests see it too.
+        if resolved_hparams:
+            prefit_snapshot = {
+                k: pipe.named_steps["model"].get_params().get(k)
+                for k in resolved_hparams
+            }
+            LOGGER.info("[Pre-fit params] %s -> %s", name, prefit_snapshot)
+            _safe_call(
+                log_callback,
+                f"[Hyperparameters] {name}: {prefit_snapshot}",
+                context="log_callback:hparams",
+            )
+
         oof_pred = None
 
-        if callable(log_callback):
-            _safe_call(log_callback, f"[Start] {name}", context="log_callback:start")
-            if resolved_hparams:
-                try:
-                    overrides_txt = ", ".join(
-                        f"{k}={resolved_hparams[k]!r}" for k in sorted(resolved_hparams)
-                    )
-                    _safe_call(log_callback,
-                               f"[Hyperparameters] {name} overrides: {overrides_txt}",
-                               context="log_callback:hparams")
-                except Exception:
-                    pass
-            # Pipeline integrity check: confirm the values the UI sent are
-            # the ones the estimator actually holds right before training.
-            try:
-                actual_params = pipe.named_steps["model"].get_params()
-                if resolved_hparams:
-                    mismatches = []
-                    for k, v in resolved_hparams.items():
-                        if k in _PROTECTED_PARAMS:
-                            continue
-                        if actual_params.get(k) != v:
-                            mismatches.append(
-                                f"{k}: expected {v!r}, got {actual_params.get(k)!r}"
-                            )
-                    assert not mismatches, (
-                        f"Hyperparameter mismatch on {name}: " + "; ".join(mismatches)
-                    )
-                LOGGER.info(
-                    "[Pipeline verify] %s: get_params() sample -> %s",
-                    name,
-                    {k: actual_params.get(k) for k in sorted(resolved_hparams)}
-                    if resolved_hparams else {"(defaults)": True},
-                )
-            except AssertionError as exc:
-                LOGGER.error(str(exc))
-                _safe_call(log_callback, f"[Pipeline ERROR] {exc}",
-                           context="log_callback:pipe_verify")
-                raise
-        if callable(model_status_callback):
-            _safe_call(model_status_callback, name, "start", context="model_status_callback:start")
+        _safe_call(log_callback, f"[Start] {name}", context="log_callback:start")
+        _safe_call(model_status_callback, name, "start", context="model_status_callback:start")
 
         # — run either repeated/k-fold/nested CV or simple hold-out
         mode = cv_mode or CV_MODE

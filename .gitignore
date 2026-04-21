@@ -53,3 +53,17 @@ dataset/*.csv
 dataset/*.xlsx
 dataset/*.xls
 dataset/*.docx
+
+# Logs
+logs/
+logs/*.log
+logs/*.log.*
+logs/*.log.*.*
+logs/*.log.*.*.*
+logs/*.log.*.*.*.*
+logs/*.log.*.*.*.*.*
+logs/*.log.*.*.*.*.*.*
+logs/*.log.*.*.*.*.*.*.*
+logs/*.log.*.*.*.*.*.*.*.*
+logs/*.log.*.*.*.*.*.*.*.*.*
+logs/*.log.*.*.*.*.*.*.*.*.*.*

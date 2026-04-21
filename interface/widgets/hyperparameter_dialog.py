@@ -16,9 +16,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -43,7 +44,31 @@ from models.hyperparameters import (
     get_default_hyperparams,
     get_param_schema,
 )
+from models.hyperparameter_presets import (
+    CUSTOM_PRESET_ID,
+    CUSTOM_PRESET_LABEL,
+    get_presets,
+    has_presets,
+    match_preset,
+    resolve_preset,
+)
 from utils.localization import tr
+
+
+class _NoWheelFilter(QObject):
+    """Swallow mouse-wheel events on spin boxes that live inside a QScrollArea.
+
+    Without this, rolling the wheel over a spin box changes its value instead
+    of scrolling the surrounding form, which is a classic Qt accessibility
+    gotcha and a frequent source of accidental hyperparameter edits.
+    """
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt signature
+        if event.type() == QEvent.Type.Wheel and isinstance(obj, QAbstractSpinBox):
+            if not obj.hasFocus():
+                event.ignore()
+                return True
+        return False
 
 
 # Pretty model labels for the dialog header (falls back to the raw key).
@@ -80,7 +105,19 @@ class HyperparameterDialog(QDialog):
         # Per-param widget + a callable that reads the current raw value.
         self._readers: dict[str, callable] = {}
         self._widgets: dict[str, QWidget] = {}
+        # Companion slider for widgets built with the slider+spin pairing;
+        # tracked so preset application can sync both ends at once.
+        self._sliders: dict[str, QSlider] = {}
         self._resolved: dict[str, Any] = {}
+        # Owned by the dialog (same lifetime) so installEventFilter is safe.
+        self._wheel_filter = _NoWheelFilter(self)
+        # Preset dropdown handles. _suppress_preset_sync guards the combo
+        # while the dialog pushes preset values into child widgets so the
+        # combo doesn't immediately flip back to "Custom".
+        self._preset_combo: QComboBox | None = None
+        self._preset_description: QLabel | None = None
+        self._preset_current_id: str = CUSTOM_PRESET_ID
+        self._suppress_preset_sync: bool = False
 
         display_name = _MODEL_DISPLAY_NAMES.get(self._model_name, self._model_name)
         self.setWindowTitle(
@@ -119,6 +156,11 @@ class HyperparameterDialog(QDialog):
             info.setWordWrap(True)
             root.addWidget(info)
         else:
+            # Preset section (above the form). Only shown for models that
+            # have at least one preset registered.
+            if has_presets(self._model_name):
+                root.addWidget(self._build_preset_section())
+
             # Scroll area keeps the dialog tidy even on small screens.
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
@@ -138,6 +180,13 @@ class HyperparameterDialog(QDialog):
 
             scroll.setWidget(container)
             root.addWidget(scroll, 1)
+
+            # With every input widget built, connect its change signal to
+            # _mark_custom so manual edits flip the preset dropdown to
+            # "Custom (Manual Tuning)". The guard flag prevents preset
+            # application (and the initial population) from triggering it.
+            self._connect_change_listeners()
+            self._sync_preset_from_values()
 
         btn_row = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -169,6 +218,13 @@ class HyperparameterDialog(QDialog):
     # Widget construction
     # ------------------------------------------------------------------
 
+    def _apply_spinbox_ux(self, spin: QAbstractSpinBox) -> None:
+        """Common UX hardening for every spin box on this dialog."""
+        # StrongFocus + wheel filter together prevent accidental value edits
+        # from scrolling the surrounding form.
+        spin.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        spin.installEventFilter(self._wheel_filter)
+
     def _make_label(self, spec: dict[str, Any]) -> QWidget:
         wrap = QWidget()
         lay = QHBoxLayout(wrap)
@@ -192,7 +248,6 @@ class HyperparameterDialog(QDialog):
             except Exception:
                 info.setText("ⓘ")
             info.setToolTip(tip_text)
-            info.clicked.connect(lambda _c=False, t=tip_text: info.setToolTip(t))
             lay.addWidget(info)
 
         lay.addStretch(1)
@@ -273,6 +328,7 @@ class HyperparameterDialog(QDialog):
         tip = str(spec.get("tooltip", "")).strip()
         if tip:
             spin.setToolTip(tip)
+        self._apply_spinbox_ux(spin)
         name = str(spec["name"])
         self._widgets[name] = spin
         self._readers[name] = spin.value
@@ -282,25 +338,28 @@ class HyperparameterDialog(QDialog):
         spin = QSpinBox()
         lo = int(spec.get("min", 0))
         hi = int(spec.get("max", 10_000))
-        spin.setRange(lo, hi)
-        spin.setSingleStep(int(spec.get("step", 1)))
+        ptype = str(spec.get("type", ""))
 
-        if str(spec.get("type", "")) == "int_or_none":
+        if ptype == "int_or_none":
+            # The sentinel must equal the spinbox minimum so
+            # setSpecialValueText triggers exactly on "None". Enforcing this
+            # invariant here removes any ambiguity between schema values.
             sentinel = int(spec.get("none_sentinel", lo))
-            # Qt shows a custom string for the minimum; use that for "Unlimited".
+            lo = sentinel
+            spin.setRange(lo, hi)
             spin.setSpecialValueText(
                 tr("dialogs.hyperparameters.unlimited", default="Unlimited")
             )
-            # Ensure the sentinel lines up with the minimum so
-            # setSpecialValueText triggers correctly.
-            if sentinel != lo:
-                spin.setRange(sentinel, hi)
+        else:
+            spin.setRange(lo, hi)
+
+        spin.setSingleStep(int(spec.get("step", 1)))
 
         try:
             spin.setValue(int(raw_value))
         except (TypeError, ValueError):
             default_val = spec.get("default")
-            if default_val is None and str(spec.get("type", "")) == "int_or_none":
+            if default_val is None and ptype == "int_or_none":
                 spin.setValue(int(spec.get("none_sentinel", spin.minimum())))
             else:
                 spin.setValue(int(default_val or 0))
@@ -308,6 +367,7 @@ class HyperparameterDialog(QDialog):
         tip = str(spec.get("tooltip", "")).strip()
         if tip:
             spin.setToolTip(tip)
+        self._apply_spinbox_ux(spin)
 
         container: QWidget = spin
         if bool(spec.get("slider", False)):
@@ -342,7 +402,194 @@ class HyperparameterDialog(QDialog):
         name = str(spec["name"])
         self._widgets[name] = spin
         self._readers[name] = spin.value
+        if bool(spec.get("slider", False)):
+            # 'slider' is defined in the slider+spin branch above; capture it
+            # for later syncing from preset application.
+            self._sliders[name] = slider  # type: ignore[name-defined]
         return container
+
+    # ------------------------------------------------------------------
+    # Presets
+    # ------------------------------------------------------------------
+
+    def _build_preset_section(self) -> QWidget:
+        """Build the "Configuration Preset" dropdown + description row."""
+        wrap = QWidget()
+        lay = QVBoxLayout(wrap)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+
+        label = QLabel(
+            tr(
+                "dialogs.hyperparameters.preset_label",
+                default="Configuration Preset:",
+            )
+        )
+        label_font = QFont(label.font())
+        label_font.setBold(True)
+        label.setFont(label_font)
+
+        combo = QComboBox()
+        for preset in get_presets(self._model_name):
+            combo.addItem(preset["label"], userData=preset["id"])
+        combo.addItem(CUSTOM_PRESET_LABEL, userData=CUSTOM_PRESET_ID)
+        combo.setToolTip(
+            tr(
+                "dialogs.hyperparameters.preset_tooltip",
+                default="Pick a curated configuration. Manual edits below will "
+                        "switch this back to 'Custom (Manual Tuning)'.",
+            )
+        )
+        combo.currentIndexChanged.connect(self._on_preset_changed)
+        self._preset_combo = combo
+
+        row.addWidget(label, 0)
+        row.addWidget(combo, 1)
+        lay.addLayout(row)
+
+        description = QLabel("")
+        description.setWordWrap(True)
+        description.setObjectName("hyperparameterPresetDescription")
+        description.setStyleSheet("color: #5B6C7B; font-size: 11px;")
+        self._preset_description = description
+        lay.addWidget(description)
+
+        return wrap
+
+    def _connect_change_listeners(self) -> None:
+        """Connect each input widget so manual edits flip combo to 'Custom'."""
+        for name, widget in self._widgets.items():
+            if isinstance(widget, QCheckBox):
+                widget.toggled.connect(self._mark_custom)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_custom)
+            elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                widget.valueChanged.connect(self._mark_custom)
+            slider = self._sliders.get(name)
+            if slider is not None:
+                slider.valueChanged.connect(self._mark_custom)
+
+    def _on_preset_changed(self, _idx: int) -> None:
+        """Handle the user picking a new preset from the dropdown."""
+        if self._suppress_preset_sync or self._preset_combo is None:
+            return
+        preset_id = str(self._preset_combo.currentData() or CUSTOM_PRESET_ID)
+        self._preset_current_id = preset_id
+        if preset_id == CUSTOM_PRESET_ID:
+            self._update_preset_description(None)
+            return
+        resolved = resolve_preset(self._model_name, preset_id)
+        if resolved is None:
+            return
+        self._apply_values(resolved)
+        self._update_preset_description(preset_id)
+
+    def _apply_values(self, values: dict[str, Any]) -> None:
+        """Push ``values`` into every widget without flipping combo to 'Custom'.
+
+        ``values`` is keyed by sklearn parameter name (decoded form).
+        """
+        self._suppress_preset_sync = True
+        try:
+            for spec in self._schema:
+                name = str(spec["name"])
+                if name not in values:
+                    continue
+                raw = encode_param_value(spec, values[name])
+                self._set_widget_value(spec, raw)
+        finally:
+            self._suppress_preset_sync = False
+
+    def _set_widget_value(self, spec: dict[str, Any], raw_value: Any) -> None:
+        """Assign ``raw_value`` to the widget for ``spec`` (guarded setter)."""
+        name = str(spec["name"])
+        widget = self._widgets.get(name)
+        if widget is None:
+            return
+        if isinstance(widget, QCheckBox):
+            widget.setChecked(bool(raw_value))
+        elif isinstance(widget, QComboBox):
+            for i in range(widget.count()):
+                if widget.itemData(i) == raw_value:
+                    widget.setCurrentIndex(i)
+                    break
+        elif isinstance(widget, QDoubleSpinBox):
+            try:
+                widget.setValue(float(raw_value))
+            except (TypeError, ValueError):
+                widget.setValue(float(spec.get("default", 0.0)))
+        elif isinstance(widget, QSpinBox):
+            try:
+                widget.setValue(int(raw_value))
+            except (TypeError, ValueError):
+                default_val = spec.get("default")
+                if default_val is None and str(spec.get("type", "")) == "int_or_none":
+                    widget.setValue(int(spec.get("none_sentinel", widget.minimum())))
+                else:
+                    widget.setValue(int(default_val or 0))
+        # Keep the companion slider in sync with the spin value.
+        slider = self._sliders.get(name)
+        if slider is not None and isinstance(widget, QSpinBox):
+            slider.setValue(widget.value())
+
+    def _mark_custom(self, *_args) -> None:
+        """Flip the preset combo to 'Custom' in response to a manual edit."""
+        if self._suppress_preset_sync or self._preset_combo is None:
+            return
+        if self._preset_current_id == CUSTOM_PRESET_ID:
+            return
+        self._preset_current_id = CUSTOM_PRESET_ID
+        self._preset_combo.blockSignals(True)
+        try:
+            for i in range(self._preset_combo.count()):
+                if self._preset_combo.itemData(i) == CUSTOM_PRESET_ID:
+                    self._preset_combo.setCurrentIndex(i)
+                    break
+        finally:
+            self._preset_combo.blockSignals(False)
+        self._update_preset_description(None)
+
+    def _sync_preset_from_values(self) -> None:
+        """On dialog open: pick the preset that matches current values, else Custom."""
+        if self._preset_combo is None:
+            return
+        current_values = {
+            str(spec["name"]): decode_param_value(spec, self._readers[str(spec["name"])]())
+            for spec in self._schema
+            if str(spec["name"]) in self._readers
+        }
+        matched = match_preset(self._model_name, current_values) or CUSTOM_PRESET_ID
+        self._preset_current_id = matched
+        self._preset_combo.blockSignals(True)
+        try:
+            for i in range(self._preset_combo.count()):
+                if self._preset_combo.itemData(i) == matched:
+                    self._preset_combo.setCurrentIndex(i)
+                    break
+        finally:
+            self._preset_combo.blockSignals(False)
+        self._update_preset_description(matched if matched != CUSTOM_PRESET_ID else None)
+
+    def _update_preset_description(self, preset_id: str | None) -> None:
+        if self._preset_description is None:
+            return
+        if not preset_id or preset_id == CUSTOM_PRESET_ID:
+            self._preset_description.setText(
+                tr(
+                    "dialogs.hyperparameters.custom_description",
+                    default="You have customized individual values.",
+                )
+            )
+            return
+        for preset in get_presets(self._model_name):
+            if preset["id"] == preset_id:
+                self._preset_description.setText(preset.get("description", ""))
+                return
+        self._preset_description.setText("")
 
     # ------------------------------------------------------------------
     # Actions
@@ -359,28 +606,14 @@ class HyperparameterDialog(QDialog):
         self.accept()
 
     def _restore_defaults(self):
-        """Re-populate every widget from the schema defaults."""
-        for spec in self._schema:
-            name = str(spec["name"])
-            widget = self._widgets.get(name)
-            raw_default = encode_param_value(spec, spec.get("default"))
-            if isinstance(widget, QCheckBox):
-                widget.setChecked(bool(raw_default))
-            elif isinstance(widget, QComboBox):
-                for i in range(widget.count()):
-                    if widget.itemData(i) == raw_default:
-                        widget.setCurrentIndex(i)
-                        break
-            elif isinstance(widget, QDoubleSpinBox):
-                try:
-                    widget.setValue(float(raw_default))
-                except (TypeError, ValueError):
-                    pass
-            elif isinstance(widget, QSpinBox):
-                try:
-                    widget.setValue(int(raw_default))
-                except (TypeError, ValueError):
-                    pass
+        """Re-populate every widget from the schema defaults.
+
+        Routes through :meth:`_apply_values` so the combo is re-synced
+        afterwards: if the defaults happen to match a registered preset,
+        the dropdown picks it; otherwise it shows 'Custom'.
+        """
+        self._apply_values(dict(self._defaults))
+        self._sync_preset_from_values()
 
 
 __all__ = ["HyperparameterDialog"]

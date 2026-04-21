@@ -30,8 +30,9 @@ Each model maps to an ordered list of parameter specs. A spec is a dict:
     }
 
 Values flow unchanged into the estimator's constructor kwargs. ``None`` is
-supported via ``int_or_none`` (UI uses a sentinel value, typically -1, mapped
-to None in :func:`decode_param_value`).
+supported via ``int_or_none`` (UI uses a sentinel value — by convention
+``none_sentinel == min`` so the widget cannot step to an invalid value —
+mapped back to ``None`` in :func:`decode_param_value`).
 """
 from __future__ import annotations
 
@@ -94,10 +95,13 @@ MODEL_PARAM_SCHEMAS: dict[str, list[dict[str, Any]]] = {
             "label": "Maximum Tree Depth (max_depth)",
             "type": "int_or_none", "slider": True,
             "default": None,
-            "none_sentinel": -1,
-            "min": -1, "max": 50, "step": 1,
-            "tooltip": "Cap on tree depth. Set to -1 for Unlimited. "
-                       "Shallower trees regularize the model.",
+            # Sentinel == minimum so the UI can't step to an invalid value
+            # (sklearn rejects max_depth <= 0). 0 means "Unlimited", 1..50
+            # are real depths.
+            "none_sentinel": 0,
+            "min": 0, "max": 50, "step": 1,
+            "tooltip": "Cap on tree depth. 'Unlimited' lets trees grow as "
+                       "deep as needed; shallower trees regularize the model.",
         },
         {
             "name": "min_samples_split",
@@ -163,9 +167,11 @@ MODEL_PARAM_SCHEMAS: dict[str, list[dict[str, Any]]] = {
             "label": "Maximum Tree Depth (max_depth)",
             "type": "int_or_none", "slider": True,
             "default": None,
-            "none_sentinel": -1,
-            "min": -1, "max": 20, "step": 1,
-            "tooltip": "Cap on tree depth. Set to -1 for Unlimited.",
+            # Sentinel == minimum (see note on RandomForest.max_depth).
+            "none_sentinel": 0,
+            "min": 0, "max": 20, "step": 1,
+            "tooltip": "Cap on tree depth. 'Unlimited' lets trees grow as "
+                       "deep as needed.",
         },
         {
             "name": "min_samples_leaf",
@@ -432,12 +438,25 @@ def decode_param_value(spec: dict[str, Any], raw_value: Any) -> Any:
     """
     ptype = str(spec.get("type", ""))
     if ptype == "int_or_none":
-        sentinel = spec.get("none_sentinel", -1)
+        if raw_value is None:
+            return None
+        sentinel = int(spec.get("none_sentinel", 0))
         try:
             iv = int(raw_value)
         except (TypeError, ValueError):
             return spec.get("default")
-        return None if iv == int(sentinel) else iv
+        if iv == sentinel:
+            return None
+        # Out-of-range ints (e.g. a legacy session saved with a previous
+        # sentinel convention) collapse to None rather than reaching sklearn
+        # as a value it would reject at fit time.
+        lo = spec.get("min")
+        hi = spec.get("max")
+        if lo is not None and iv < int(lo):
+            return None
+        if hi is not None and iv > int(hi):
+            return None
+        return iv
     if ptype == "int":
         try:
             return int(raw_value)
@@ -493,17 +512,25 @@ def encode_param_value(spec: dict[str, Any], value: Any) -> Any:
     """Translate a stored value into the raw value the UI widget expects.
 
     Inverse of :func:`decode_param_value`. Used when re-opening the settings
-    dialog so previously saved user choices repopulate correctly.
+    dialog so previously saved user choices repopulate correctly. Values that
+    fall outside the declared [min, max] range (e.g. legacy sessions) are
+    clamped to the sentinel so the dialog opens on "Unlimited" instead of
+    silently rounding to an invalid value.
     """
     ptype = str(spec.get("type", ""))
     if ptype == "int_or_none":
-        sentinel = int(spec.get("none_sentinel", -1))
+        sentinel = int(spec.get("none_sentinel", 0))
         if value is None:
             return sentinel
         try:
-            return int(value)
+            iv = int(value)
         except (TypeError, ValueError):
             return sentinel
+        lo = spec.get("min")
+        hi = spec.get("max")
+        if (lo is not None and iv < int(lo)) or (hi is not None and iv > int(hi)):
+            return sentinel
+        return iv
     return value
 
 
