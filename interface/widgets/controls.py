@@ -189,6 +189,12 @@ def apply_translations(w):
     w.log_box.setPlaceholderText(
         tr("controls.results.logs_placeholder", default="Execution logs will appear here.")
     )
+    w.results_save_button.setText(tr("controls.results.save_this_run", default="Save Results"))
+    w.results_save_button.setToolTip(
+        tr("controls.results.save_tooltip", default="Persist current temporary run outputs into output/runs.")
+    )
+    w.results_retrain_button.setText(tr("controls.results.retrain", default="Retrain"))
+    w.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
     w.results_summary_text.setPlaceholderText(
         tr("controls.results.best_model_placeholder", default="Best model summary will appear here after training.")
     )
@@ -633,6 +639,7 @@ def build_layout():
     setup_layout.setSpacing(12)
 
     setup_hero = QWidget()
+    w.train_setup_hero = setup_hero
     setup_hero_layout = QVBoxLayout(setup_hero)
     setup_hero_layout.setContentsMargins(24, 6, 24, 6)
     setup_hero_layout.setSpacing(6)
@@ -836,6 +843,22 @@ def build_layout():
     results_layout = QVBoxLayout(results_tab)
     results_layout.setContentsMargins(0, 0, 0, 0)
     results_layout.setSpacing(6)
+
+    w.results_save_row = QWidget()
+    save_row_layout = QHBoxLayout(w.results_save_row)
+    save_row_layout.setContentsMargins(0, 0, 0, 0)
+    save_row_layout.setSpacing(8)
+    w.results_retrain_button = QPushButton("Retrain")
+    w.results_retrain_button.setObjectName("ghostButton")
+    w.results_save_button = QPushButton("Save Results")
+    w.results_save_button.setObjectName("accentButton")
+    w.results_save_status = QLabel("Run not saved")
+    w.results_save_status.setObjectName("hintLabel")
+    w.results_save_status.setWordWrap(True)
+    save_row_layout.addWidget(w.results_retrain_button, 0)
+    save_row_layout.addWidget(w.results_save_button, 0)
+    save_row_layout.addWidget(w.results_save_status, 1)
+    results_layout.addWidget(w.results_save_row, 0)
     results_layout.addLayout(kpi_row)
 
     w.results_tabs = QTabWidget()
@@ -910,7 +933,7 @@ def build_layout():
     w.results_tabs.addTab(tables_tab, "Tables")
     w.results_tabs.addTab(figures_tab, "Figures")
     w.results_tabs.addTab(shap_tab, "SHAP")
-    w.results_tabs.setMinimumHeight(260)
+    w.results_tabs.setMinimumHeight(220)
     results_layout.addWidget(w.results_tabs, 1)
     w.results_tabs.setEnabled(False)
 

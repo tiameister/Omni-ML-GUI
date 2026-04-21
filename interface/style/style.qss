@@ -514,8 +514,9 @@ QLabel#trainBlockerLabel[severity="warn"] {
 }
 
 #footerLabel {
-  color: #5B6C7B;
-  font-size: 9.6pt;
+  color: #354657;
+  font-size: 10.6pt;
+  font-weight: 560;
 }
 
 #workflowCard::title {

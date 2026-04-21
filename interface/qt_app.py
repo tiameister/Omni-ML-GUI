@@ -565,6 +565,8 @@ class MLTrainerApp(QMainWindow):
         c.customize_plots_btn.clicked.connect(self._on_customize_plots)
         # SHAP settings
         c.shap_settings_btn.clicked.connect(self._on_shap_settings)
+        c.results_save_button.clicked.connect(self._on_save_current_run)
+        c.results_retrain_button.clicked.connect(self._on_train)
         c.figures_list.currentItemChanged.connect(self._on_figure_item_changed)
         c.figures_model_filter.currentIndexChanged.connect(self._apply_figure_filters)
         c.figures_category_filter.currentIndexChanged.connect(self._apply_figure_filters)
@@ -1487,13 +1489,18 @@ class MLTrainerApp(QMainWindow):
         if not hasattr(c, "train_stage_stack"):
             return
         if stage == "active":
+            c.train_stage_stack.setVisible(True)
             c.train_stage_stack.setCurrentWidget(c.train_stage_active)
             return
-        c.train_stage_stack.setCurrentWidget(c.train_stage_setup)
-        if hasattr(c, "progress_panel"):
+        if stage == "results":
+            c.train_stage_stack.setVisible(False)
             c.progress_panel.setVisible(False)
-        if hasattr(c, "cancel_button"):
             c.cancel_button.setVisible(False)
+            return
+        c.train_stage_stack.setVisible(True)
+        c.train_stage_stack.setCurrentWidget(c.train_stage_setup)
+        c.progress_panel.setVisible(False)
+        c.cancel_button.setVisible(False)
 
     def _set_controls_for_run_state(self, running: bool):
         c = self.controls
@@ -2577,12 +2584,32 @@ class MLTrainerApp(QMainWindow):
     def _sync_results_ui_state(self):
         c = self.controls
         has_result = bool(self._latest_result_dir)
+        is_running = self._active_job_id is not None
 
         c.results_tabs.setEnabled(has_result)
+        c.results_save_row.setVisible(has_result)
+        c.results_save_button.setEnabled(has_result and (not self._latest_result_saved))
+        c.results_retrain_button.setEnabled(not is_running)
         c.results_summary_text.setVisible(True)
         if not has_result:
             # Clear content so placeholder text becomes visible.
             c.results_summary_text.clear()
+            c.results_save_status.setText(tr("results.save_status.not_saved", default="Run not saved"))
+            c.results_save_status.setStyleSheet("")
+            if not is_running:
+                self._set_train_stage("setup")
+        elif self._latest_result_saved:
+            c.results_save_status.setText(tr("results.save_status.saved", default="✓ Saved to output/runs"))
+            c.results_save_status.setStyleSheet("color: #1f7a3f; font-weight: 650;")
+            if not is_running:
+                self._set_train_stage("results")
+        else:
+            c.results_save_status.setText(
+                tr("results.save_status.temporary", default="Temporary run: click Save Results to persist")
+            )
+            c.results_save_status.setStyleSheet("")
+            if not is_running:
+                self._set_train_stage("results")
 
     def _discover_result_images(self, run_dir: str):
         figure_records: list[dict] = []
@@ -2751,21 +2778,47 @@ class MLTrainerApp(QMainWindow):
         if metrics_df is None or metrics_df.empty:
             return tr("results.no_metrics", default="No metrics to display.")
 
-        preferred_cols = [
-            "model",
-            "R2_CV_mean",
-            "R2",
-            "CV_RMSE",
-            "RMSE",
-            "CV_MAE",
-            "MAE",
-            "validation_mode",
+        best_row = metrics_df.iloc[0]
+        metric_priority = [
+            "accuracy", "f1", "precision", "recall", "auc", "roc_auc",
+            "r2", "rmse", "mae", "mape", "mse",
         ]
-        cols = [c for c in preferred_cols if c in metrics_df.columns]
-        if not cols:
-            cols = list(metrics_df.columns[: min(6, len(metrics_df.columns))])
 
-        top_df = metrics_df.loc[:, cols].head(6).copy()
+        def _normalized(name: str) -> str:
+            return str(name).strip().lower().replace("-", "_").replace(" ", "_")
+
+        numeric_metric_cols: list[str] = []
+        for col in metrics_df.columns:
+            norm = _normalized(str(col))
+            if norm in {"model", "validation_mode", "trainingtime", "training_time"}:
+                continue
+            try:
+                float(best_row.get(col))
+                numeric_metric_cols.append(str(col))
+            except Exception:
+                continue
+
+        def _metric_rank(col: str) -> tuple[int, str]:
+            norm = _normalized(col)
+            for idx, token in enumerate(metric_priority):
+                if token in norm:
+                    return (idx, norm)
+            return (len(metric_priority) + 1, norm)
+
+        numeric_metric_cols = sorted(numeric_metric_cols, key=_metric_rank)
+        display_metric_cols = numeric_metric_cols[:6]
+
+        cols: list[str] = []
+        if "model" in metrics_df.columns:
+            cols.append("model")
+        cols.extend(display_metric_cols)
+        if "validation_mode" in metrics_df.columns:
+            cols.append("validation_mode")
+        if not cols:
+            cols = list(metrics_df.columns[: min(7, len(metrics_df.columns))])
+
+        top_df = metrics_df.loc[:, cols].head(8).copy()
+        model_count = int(len(metrics_df.index))
 
         def _fmt(v):
             try:
@@ -2773,6 +2826,11 @@ class MLTrainerApp(QMainWindow):
                 return f"{fv:.4f}"
             except Exception:
                 return str(v)
+
+        chips = [f"{col}: {_fmt(best_row.get(col))}" for col in display_metric_cols[:4]]
+        chips_html = " | ".join(html.escape(x) for x in chips) if chips else html.escape(
+            tr("results.summary.metrics_unavailable", default="Key metrics unavailable in this run output.")
+        )
 
         header = "".join(
             "<th style='text-align:left; padding:6px 8px; border-bottom:1px solid #d6dde6;'>"
@@ -2790,10 +2848,12 @@ class MLTrainerApp(QMainWindow):
         rows_html = "".join(rows)
 
         return (
-            f"<h3 style='margin:0 0 8px 0;'>"
+            f"<h3 style='margin:0 0 10px 0; font-size:15px;'>"
             f"{html.escape(tr('results.best_model_prefix', default='Best model: {model}', model=best_model or '-'))}"
             f"</h3>"
-            "<p style='margin:0 0 10px 0; opacity:0.8;'>Top candidates by validation metrics</p>"
+            f"<p style='margin:0 0 8px 0; font-size:13px; opacity:0.95;'>{html.escape(tr('results.summary.models_evaluated', default='Models evaluated: {count}', count=model_count))}</p>"
+            f"<p style='margin:0 0 14px 0; font-size:13px; opacity:0.95;'>{chips_html}</p>"
+            "<p style='margin:0 0 10px 0; font-size:12px; opacity:0.85;'>Top candidates by validation metrics</p>"
             "<table style='border-collapse:collapse; width:100%;'>"
             f"<thead><tr>{header}</tr></thead>"
             f"<tbody>{rows_html}</tbody>"
@@ -3724,7 +3784,7 @@ class MLTrainerApp(QMainWindow):
         c.cancel_button.setEnabled(False)
         c.cancel_button.setVisible(False)
         self._set_controls_for_run_state(False)
-        self._set_train_stage("setup")
+        self._set_train_stage("results")
         self._on_cv_mode_changed(c.cv_mode_combo.currentText())
         self.statusBar().showMessage(tr("status.training_complete_sec", default="Training complete in {seconds:.1f}s", seconds=elapsed))
         c.kpi_run_value.setText(tr("status.kpi.done_sec", default="Done ({seconds:.1f}s)", seconds=elapsed))
