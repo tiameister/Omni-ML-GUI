@@ -26,7 +26,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTDIR = os.path.join(ROOT, "exports", "manuscript_exports")
+analysis_root = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
+OUTDIR = os.path.join(analysis_root, "manuscript_exports") if analysis_root else os.path.join(ROOT, "exports", "manuscript_exports")
 os.makedirs(OUTDIR, exist_ok=True)
 
 

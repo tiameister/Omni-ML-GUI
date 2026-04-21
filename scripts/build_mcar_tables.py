@@ -15,7 +15,8 @@ from utils.logger import get_logger
 LOGGER = get_logger(__name__)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXPORTS = os.path.join(ROOT, 'exports', 'manuscript_exports')
+ANALYSIS_ROOT = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
+EXPORTS = os.path.join(ANALYSIS_ROOT, "manuscript_exports") if ANALYSIS_ROOT else os.path.join(ROOT, 'exports', 'manuscript_exports')
 os.makedirs(EXPORTS, exist_ok=True)
 
 from data.loader import read_csv_safely

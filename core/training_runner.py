@@ -14,8 +14,10 @@ from config import CV_REPEATS, CV_STRATIFY, DO_SHAP, OUTPUT_DIR, RSTATE, RUN_TAG
 from utils.logger import get_logger
 from utils.paths import (
     get_run_model_dir,
+    get_run_model_root,
     get_run_root,
     get_run_subdir,
+    get_supplements_root,
     get_transient_run_root,
     make_run_id,
     safe_folder_name,
@@ -48,8 +50,9 @@ def _raise_if_cancelled(should_cancel):
 
 
 def _project_root_dir() -> str:
-    # core/training_runner.py -> project root is parent dir
-    return str(Path(__file__).resolve().parents[1])
+    """Return project root; resolves correctly for both source and PyInstaller frozen builds."""
+    from utils.paths import get_project_root
+    return str(get_project_root())
 
 
 def _run_optional_script(
@@ -322,6 +325,10 @@ def run_training(
     analysis_root = os.path.join(run_outdir, "1_Overall_Evaluation")
     os.makedirs(analysis_root, exist_ok=True)
     out_info["analysis_dir"] = analysis_root
+    model_root = str(get_run_model_root(run_root))
+    out_info["model_dir"] = model_root
+    supplements_root = str(get_supplements_root(run_root=run_root))
+    out_info["supplements_dir"] = supplements_root
 
     _safe_call(callbacks.log, f"Run output folder: {run_outdir}", context="log")
     _safe_call(
@@ -334,6 +341,22 @@ def run_training(
         fe_prefix = "feature_engineering_" if fe_enabled else ""
         save_model_metrics(run_outdir, metrics_df, filename_prefix=fe_prefix)
         save_cv_splits(run_outdir, {name: m.get("cv_scores", {}) for name, m in fitted_models.items()})
+
+    # Persist fitted pipelines in a deterministic model subtree.
+    try:
+        import joblib
+        for model_name, payload in dict(fitted_models or {}).items():
+            pipe_obj = payload.get("pipe")
+            if pipe_obj is None:
+                continue
+            model_dir = Path(get_run_model_dir(run_root, model_name))
+            model_path = model_dir / "model_pipeline.joblib"
+            joblib.dump(pipe_obj, model_path)
+            cv_scores = payload.get("cv_scores", {}) or {}
+            with open(model_dir / "cv_scores.json", "w", encoding="utf-8") as fh:
+                json.dump(cv_scores, fh, ensure_ascii=False, indent=2)
+    except Exception:
+        LOGGER.exception("Failed to persist one or more model artifacts")
 
     # Provenance
     selection_dir = str(get_run_subdir(run_root, "0_Feature_Selection"))
@@ -781,6 +804,7 @@ def run_training(
             "RUN_TAG": "",
             "MLTRAINER_RUN_ROOT": run_outdir,
             "MLTRAINER_ANALYSIS_ROOT": analysis_root,
+            "MLTRAINER_SUPPLEMENTS_ROOT": supplements_root,
         }
 
         ok, output = _run_optional_script(

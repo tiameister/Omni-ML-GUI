@@ -1,10 +1,18 @@
 import json
 import logging
 import locale
+import sys
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _get_locales_dir() -> Path:
+    """Locate the bundled locales/ directory for both source and frozen builds."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "locales"
+    return Path(__file__).parent.parent / "locales"
 
 def _flatten_dict(d: dict, parent_key: str = '', sep: str = '.') -> dict:
     items = []
@@ -27,7 +35,7 @@ class LocalizationManager:
 
     def _init(self):
         self.current_language = 'en'
-        self.locales_dir = Path(__file__).parent.parent / "locales"
+        self.locales_dir = _get_locales_dir()
         
         self.translations = {}
         self.fallback_translations = {} 

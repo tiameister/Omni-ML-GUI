@@ -1,8 +1,11 @@
+import logging
 import os
 import re
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
+
+LOGGER = logging.getLogger(__name__)
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 rcParams.update({
@@ -448,8 +451,8 @@ def _write_shap_correlation_report(
             corr_abs.to_excel(xw, sheet_name="shap_corr_abs")
             if not assoc_df.empty:
                 assoc_df.to_excel(xw, sheet_name="shap_vs_feature", index=False)
-    except Exception:
-        pass
+    except Exception as _exc:
+        LOGGER.warning("SHAP correlation Excel export failed: %s", _exc)
 
     # Heatmap (signed correlations)
     try:
@@ -481,8 +484,8 @@ def _write_shap_correlation_report(
         fig.tight_layout()
         _save_fig_formats(os.path.join(out_expl, f"{best_model_name}_shap_correlation_heatmap"))
         plt.close(fig)
-    except Exception:
-        pass
+    except Exception as _exc:
+        LOGGER.warning("SHAP correlation heatmap failed: %s", _exc)
 
 
 def generate_shap_summary(
@@ -582,8 +585,8 @@ def generate_shap_summary(
                 'mean_abs_shap': imp[top_idx]
             }).sort_values('mean_abs_shap', ascending=False)
             summary_df.to_excel(os.path.join(out_expl, f"{best_model_name}_shap_summary_top{len(top_idx)}.xlsx"), index=False)
-        except Exception:
-            pass
+        except Exception as _exc:
+            LOGGER.warning("SHAP values Excel export failed: %s", _exc)
         _raise_if_cancelled(cancel_cb)
 
         # Correlation report (Spearman SHAP-SHAP + SHAP-vs-feature association)
@@ -607,8 +610,8 @@ def generate_shap_summary(
                 dependence_mode=dependence_mode,
                 seed=seed,
             )
-        except Exception:
-            pass
+        except Exception as _exc:
+            LOGGER.warning("SHAP correlation report failed: %s", _exc)
 
     # Beeswarm (selected only) with dynamic height and margins
         nfeat = len(top_idx)
@@ -635,8 +638,8 @@ def generate_shap_summary(
                 try:
                     lb = float(SHAP_BEESWARM_MIN_CAP)
                     vals = np.maximum(vals, lb)
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    LOGGER.debug("SHAP_BEESWARM_MIN_CAP clipping skipped: %s", _exc)
         except Exception:
             vals = shap_values[:, top_idx]
             Xs_vals = Xs_sel
@@ -665,8 +668,8 @@ def generate_shap_summary(
                 cbar_ax.set_position([cb_left, cbar_pos.y0 + 0.02, 0.018, max(0.2, cbar_pos.height - 0.04)])
                 cbar_ax.tick_params(labelsize=9, pad=2)
                 cbar_ax.set_ylabel("Feature value", fontsize=9, labelpad=8)
-        except Exception:
-            pass
+        except Exception as _exc:
+            LOGGER.debug("SHAP beeswarm layout adjustment skipped: %s", _exc)
         _save_fig_formats(os.path.join(out_expl, f"{best_model_name}_shap_summary_beeswarm"))
         plt.close()
         _raise_if_cancelled(cancel_cb)
@@ -692,8 +695,8 @@ def generate_shap_summary(
                 if np.isfinite(xmax):
                     ax_bar.set_xlim(0.0, max(1e-6, xmax * 1.2))
                 ax_bar.margins(y=0.12)
-        except Exception:
-            pass
+        except Exception as _exc:
+            LOGGER.debug("SHAP bar layout adjustment skipped: %s", _exc)
         _save_fig_formats(os.path.join(out_expl, f"{best_model_name}_shap_summary_bar"))
         plt.close()
         _raise_if_cancelled(cancel_cb)

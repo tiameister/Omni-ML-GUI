@@ -23,12 +23,20 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from utils.paths import get_supplements_root
 
 ROOT = Path(__file__).resolve().parents[1]
-XAI_DIR = ROOT / 'output' / 'xai_consistency'
-SUPP_FIG = ROOT / 'supplements' / 'figures'
+_analysis_root = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
+_run_root = str(os.environ.get("MLTRAINER_RUN_ROOT", "") or "").strip()
+if _analysis_root:
+    XAI_DIR = Path(_analysis_root) / "xai_consistency"
+elif _run_root:
+    XAI_DIR = Path(_run_root) / "1_Overall_Evaluation" / "xai_consistency"
+else:
+    XAI_DIR = ROOT / "output" / "xai_consistency"
 
 def main():
+    supp_fig = get_supplements_root() / "figures"
     metrics_path = XAI_DIR / 'bootstrap_rank_metrics.csv'
     if not metrics_path.exists():
         raise FileNotFoundError('bootstrap_rank_metrics.csv not found. Run xai_consistency.py first.')
@@ -85,9 +93,9 @@ def main():
 
     plt.tight_layout()
     out = XAI_DIR / 'rank_stability_distribution.png'
-    SUPP_FIG.mkdir(parents=True, exist_ok=True)
+    supp_fig.mkdir(parents=True, exist_ok=True)
     plt.savefig(out, dpi=300)
-    plt.savefig(SUPP_FIG / 'S5_rank_stability_distribution.png', dpi=300)
+    plt.savefig(supp_fig / 'S5_rank_stability_distribution.png', dpi=300)
     plt.close()
     print('[OK] Wrote distribution figure:', out)
 

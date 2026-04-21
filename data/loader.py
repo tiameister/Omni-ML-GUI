@@ -220,8 +220,6 @@ def detect_cols(df: pd.DataFrame):
         "totalbullyingscore","total_bullying_score","bullying_score"
     }), None)
 
-    bully_subs = [c for c, n in nm.items() if n in {"fizikselz","sozelz","duygusalz","dijitalz"}]
-
     m_items = [c for c, n in nm.items() if re.fullmatch(r"m[0-9]+", n)]
     z_items = [c for c, n in nm.items() if re.fullmatch(r"z[0-9]+", n)]
     bully_subs = [c for c, n in nm.items() if n in {"fizikselz", "fizkselz", "sozelz", "duygusalz", "dijitalz"}]

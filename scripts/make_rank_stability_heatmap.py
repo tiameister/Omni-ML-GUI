@@ -19,12 +19,20 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from utils.paths import get_supplements_root
 
 ROOT = Path(__file__).resolve().parents[1]
-XAI_DIR = ROOT / 'output' / 'xai_consistency'
-SUPP_FIG = ROOT / 'supplements' / 'figures'
+_analysis_root = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
+_run_root = str(os.environ.get("MLTRAINER_RUN_ROOT", "") or "").strip()
+if _analysis_root:
+    XAI_DIR = Path(_analysis_root) / "xai_consistency"
+elif _run_root:
+    XAI_DIR = Path(_run_root) / "1_Overall_Evaluation" / "xai_consistency"
+else:
+    XAI_DIR = ROOT / "output" / "xai_consistency"
 
 def main():
+    supp_fig = get_supplements_root() / "figures"
     boot_path = XAI_DIR / 'bootstrap_stability.csv'
     borda_path = XAI_DIR / 'borda_ranking.csv'
     if not boot_path.exists():
@@ -85,9 +93,9 @@ def main():
     plt.close()
 
     # Copy to supplements with new naming
-    SUPP_FIG.mkdir(parents=True, exist_ok=True)
+    supp_fig.mkdir(parents=True, exist_ok=True)
     import shutil
-    suppl_path = SUPP_FIG / 'S5_rank_stability_bars.png'
+    suppl_path = supp_fig / 'S5_rank_stability_bars.png'
     shutil.copy2(out1, suppl_path)
     print('[OK] Stability bar chart saved to:', out1)
     print('[OK] Supplement bar chart saved to:', suppl_path)

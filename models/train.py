@@ -277,14 +277,18 @@ def train_and_evaluate(
         mae_train = mean_absolute_error(y, y_hat)
         rmse_train = rmse(y, y_hat)
         rows.append({
-            "model":       name,
-            "R2_CV":       float(r2_mean),
-            "MAE_CV":      float(mae_mean),
-            "RMSE_CV":     float(rmse_mean),
-            "R2_train":    float(r2_train),
-            "MAE_train":   float(mae_train),
-            "RMSE_train":  float(rmse_train),
-            "TrainingTime": float(train_time)
+            "model":           name,
+            "R2_CV":           float(r2_mean),
+            "MAE_CV":          float(mae_mean),
+            "RMSE_CV":         float(rmse_mean),
+            "R2_train":        float(r2_train),
+            "MAE_train":       float(mae_train),
+            "RMSE_train":      float(rmse_train),
+            "TrainingTime":    float(train_time),
+            # Validation strategy used; *_CV columns reflect a single holdout split
+            # in "holdout" mode (not cross-validated), so downstream consumers should
+            # interpret them accordingly.
+            "validation_mode": mode,
         })
         fitted[name] = {
             "pipe": final_pipe,

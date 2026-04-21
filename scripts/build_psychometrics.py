@@ -25,13 +25,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from utils.logger import get_logger
+from utils.paths import get_supplements_root
 
 LOGGER = get_logger(__name__)
 
 ITEM_COLS = [f"m{i}" for i in range(1,10)]  # m1..m9
 DATA_CANDIDATES = [Path("dataset/data_cleaned.csv"), Path("dataset/data.csv")]
-OUT_TABLE = Path("supplements/tables")
-OUT_FIG = Path("supplements/figures")
+SUPP_ROOT = get_supplements_root()
+OUT_TABLE = SUPP_ROOT / "tables"
+OUT_FIG = SUPP_ROOT / "figures"
 
 # Try to import factor_analyzer, else mark fallback
 try:

@@ -15,7 +15,8 @@ from utils.logger import get_logger
 LOGGER = get_logger(__name__)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASE = os.path.join(ROOT, 'validation_compare')
+ANALYSIS_ROOT = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
+BASE = os.path.join(ANALYSIS_ROOT, "validation_compare") if ANALYSIS_ROOT else os.path.join(ROOT, 'validation_compare')
 
 STRATS = ['kfold', 'repeated', 'nested']
 

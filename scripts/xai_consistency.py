@@ -13,8 +13,11 @@ import pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 run_root = os.environ.get("MLTRAINER_RUN_ROOT", "").strip()
-if run_root and os.path.isdir(run_root):
-    OUTDIR = os.path.join(run_root, EVALUATION_DIR, 'xai_consistency')
+analysis_root = os.environ.get("MLTRAINER_ANALYSIS_ROOT", "").strip()
+if analysis_root:
+    OUTDIR = os.path.join(analysis_root, "xai_consistency")
+elif run_root and os.path.isdir(run_root):
+    OUTDIR = os.path.join(run_root, EVALUATION_DIR, "xai_consistency")
 else:
     OUTDIR = os.path.join(ROOT, 'output', 'xai_consistency')
 os.makedirs(OUTDIR, exist_ok=True)
@@ -24,13 +27,9 @@ MODELS = ['RandomForest', 'HistGB', 'XGBoost']  # XGBoost included if importance
 
 def load_importances(model: str, collapse_levels: bool = True) -> pd.DataFrame:
     # look for feature_importance_{model}.csv under output/ or MLTRAINER_RUN_ROOT
-    base = os.path.join(ROOT, 'output')
     cand = []
     run_root = os.environ.get("MLTRAINER_RUN_ROOT", "").strip()
-    
-    search_dirs = [base]
-    if run_root and os.path.isdir(run_root):
-        search_dirs.append(run_root)
+    search_dirs = [run_root] if (run_root and os.path.isdir(run_root)) else [os.path.join(ROOT, "output")]
 
     for search_dir in search_dirs:
         for root_dir, dirs, files in os.walk(search_dir):
@@ -212,12 +211,11 @@ def bootstrap_stability(
 
 
 def main():
-    base = os.path.join(ROOT, 'output')
     run_root = os.environ.get("MLTRAINER_RUN_ROOT", "").strip()
-    
-    search_dirs = [base]
     if run_root and os.path.isdir(run_root):
-        search_dirs.append(run_root)
+        search_dirs = [run_root]
+    else:
+        search_dirs = [os.path.join(ROOT, "output")]
 
     # Automatically resolve models by finding their importance files
     found_models = set()
@@ -239,7 +237,7 @@ def main():
         if not df.empty:
             dfs.append(df[['feature','perm_importance_mean','perm_importance_std']].copy())
     if not dfs:
-        print('[WARN] No importance files found under output/*_output/.')
+        print('[WARN] No importance files found in run-scoped outputs.')
         return
     br = borda_rank([d[['feature','perm_importance_mean']].copy() for d in dfs])
     br.to_csv(os.path.join(OUTDIR, 'borda_ranking.csv'), index=False)

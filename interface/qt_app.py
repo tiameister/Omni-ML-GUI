@@ -2967,14 +2967,22 @@ class MLTrainerApp(QMainWindow):
                     c.shap_model_filter.setCurrentIndex(idx_best)
                     self._apply_shap_filters()
 
-            r2_png = os.path.join(self._latest_result_dir, "evaluation", "metrics_R2_cv.png")
+            fe_prefix = "feature_engineering_" if getattr(self.state, "fe_enabled", False) else ""
+            # R² bar chart is saved under 1_Overall_Evaluation by save_model_metrics.
+            r2_base = f"{fe_prefix}metrics_R2_cv.png" if fe_prefix else "metrics_R2_cv.png"
+            r2_png = os.path.join(self._latest_result_dir, "1_Overall_Evaluation", r2_base)
             if os.path.exists(r2_png):
                 self._load_image_to_label(r2_png, c.figures_img)
 
-            fe_prefix = "feature_engineering_" if getattr(self.state, "fe_enabled", False) else ""
             if best:
-                best_dir = os.path.join(self._latest_result_dir, "models", safe_folder_name(best, fallback="model"))
-                shap_png = os.path.join(best_dir, "explainability", f"{fe_prefix}{best}_shap_summary_beeswarm.png")
+                # SHAP summary is saved under 3_Manuscript_Figures/<model_name>/ by generate_shap_summary.
+                shap_model_key = fe_prefix + best
+                shap_png = os.path.join(
+                    self._latest_result_dir,
+                    "3_Manuscript_Figures",
+                    shap_model_key,
+                    f"{shap_model_key}_shap_summary_beeswarm.png",
+                )
                 if os.path.exists(shap_png):
                     self._load_image_to_label(shap_png, c.shap_img)
 

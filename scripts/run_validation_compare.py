@@ -43,7 +43,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def run_once(run_tag: str, env: dict, *, dry_run: bool = False) -> None:
     e = os.environ.copy()
     e.update(env)
-    e['OUTPUT_ROOT_DIR'] = 'validation_compare'
+    analysis_root = str(e.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
+    if analysis_root:
+        e['OUTPUT_ROOT_DIR'] = os.path.join(analysis_root, 'validation_compare')
+    else:
+        e['OUTPUT_ROOT_DIR'] = 'validation_compare'
     e['RUN_TAG'] = run_tag
     # 10-fold setting
     if run_tag == 'kfold':
@@ -64,7 +68,7 @@ def run_once(run_tag: str, env: dict, *, dry_run: bool = False) -> None:
     e['PI_ONLY_BEST_MODEL'] = e.get('PI_ONLY_BEST_MODEL', 'true')
     e['PI_N_JOBS'] = e.get('PI_N_JOBS', '-1')
     cmd = [PY, '-X', 'faulthandler', os.path.join(ROOT, 'main.py')]
-    LOGGER.info('RUN %s CV with OUTPUT_ROOT_DIR=validation_compare/%s', run_tag, run_tag)
+    LOGGER.info('RUN %s CV with OUTPUT_ROOT_DIR=%s/%s', run_tag, e['OUTPUT_ROOT_DIR'], run_tag)
     if dry_run:
         LOGGER.info('Dry-run command: %s', ' '.join(cmd))
         return

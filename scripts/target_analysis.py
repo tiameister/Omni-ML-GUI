@@ -26,6 +26,7 @@ import seaborn as sns
 
 from data.loader import detect_cols, read_csv_safely
 from config import OUTPUT_DIR
+from utils.paths import EVALUATION_DIR
 from config.columns import resolve_column_groups
 
 
@@ -184,6 +185,13 @@ def describe_target(csv_path: str, out_dir: str) -> Tuple[dict, str]:
 if __name__ == '__main__':
     csv_clean = os.path.join(ROOT, 'dataset', 'data_cleaned.csv')
     csv_path = csv_clean if os.path.exists(csv_clean) else os.path.join(ROOT, 'dataset', 'data.csv')
-    out_dir = os.path.join(ROOT, OUTPUT_DIR, 'target')
+    run_root = str(os.environ.get("MLTRAINER_RUN_ROOT", "") or "").strip()
+    analysis_root = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
+    if analysis_root:
+        out_dir = os.path.join(analysis_root, "target")
+    elif run_root and os.path.isdir(run_root):
+        out_dir = os.path.join(run_root, EVALUATION_DIR, "target")
+    else:
+        out_dir = os.path.join(ROOT, OUTPUT_DIR, 'target')
     _stats, _sent = describe_target(csv_path, out_dir)
     print(_sent)
