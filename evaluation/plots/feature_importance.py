@@ -79,7 +79,8 @@ def plot_feature_importance_heatmap(
             # Try permutation importance as a fallback
             try:
                 from sklearn.inspection import permutation_importance
-                res = permutation_importance(pipe, X, y, n_repeats=5, random_state=42, n_jobs=-1)
+                # Keep this serial to avoid thread-config propagation warnings on some sklearn/joblib combos.
+                res = permutation_importance(pipe, X, y, n_repeats=5, random_state=42, n_jobs=1)
                 imp = res.importances_mean
             except Exception:
                 imp = None
@@ -135,12 +136,12 @@ def plot_feature_importance_heatmap(
         fig_w = max(6.5, min(11.5, 6.0 + 0.03 * max_label_len))
         fig, ax = plt.subplots(figsize=(fig_w, fig_h))
         colors = plt.cm.viridis(imp_series.values / (imp_series.max() if imp_series.max() != 0 else 1))
-        ax.barh(imp_series.index, imp_series.values, color=colors)
-        # Ensure yticklabels use sanitized text
-        try:
-            ax.set_yticklabels([_qascii(t) for t in imp_series.index])
-        except Exception:
-            pass
+        y_pos = np.arange(len(imp_series), dtype=float)
+        y_labels = [_qascii(str(t)) for t in imp_series.index]
+        ax.barh(y_pos, imp_series.values, color=colors)
+        # Use fixed tick positions to avoid category inference and locator warnings.
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(y_labels)
 
         max_val = float(np.nanmax(imp_series.values)) if len(imp_series) > 0 else 0.0
         x_pad = max(1e-6, max_val * 0.18)

@@ -757,9 +757,6 @@ class MLTrainerApp(QMainWindow):
         if hasattr(c, "jobs_clear_finished_btn"):
             c.jobs_clear_finished_btn.clicked.connect(self._clear_finished_jobs)
 
-        if hasattr(c, "results_dialog"):
-            c.results_dialog.finished.connect(self._on_results_dialog_finished)
-
         self._init_shortcuts()
 
     def _init_shortcuts(self):
@@ -1658,12 +1655,6 @@ class MLTrainerApp(QMainWindow):
         has_data = self.state.df is not None
         has_variables = self.state.target is not None and bool(self.state.features)
         has_models = any(chk.isChecked() for chk in c.model_checks.values())
-
-        if hasattr(c, "skeleton_panel"):
-            try:
-                c.skeleton_panel.setVisible(not running)
-            except Exception:
-                pass
 
         if running:
             c.load_button.setEnabled(False)
@@ -2718,10 +2709,11 @@ class MLTrainerApp(QMainWindow):
         if hasattr(c, "results_tabs"):
             c.results_tabs.setEnabled(has_result)
         if hasattr(c, "results_summary_title"):
-            c.results_summary_title.setVisible(has_result)
+            c.results_summary_title.setVisible(True)
         if hasattr(c, "results_summary_text"):
-            c.results_summary_text.setVisible(has_result)
+            c.results_summary_text.setVisible(True)
             if not has_result:
+                # Clear content so placeholder text becomes visible.
                 c.results_summary_text.clear()
         if hasattr(c, "results_decision_card"):
             # Keep decision card pinned as a stable anchor for result interpretation.
@@ -2926,17 +2918,19 @@ class MLTrainerApp(QMainWindow):
         if metrics_df is not None:
             if not metrics_df.empty:
                 best_model = str(metrics_df.iloc[0]["model"]) if "model" in metrics_df.columns else ""
-                c.result_box.setPlainText(
+                summary_text = (
                     tr("results.best_model_prefix", default="Best model: {model}", model=best_model)
                     + "\n\n"
                     + metrics_df.to_string(index=False)
                 )
+                c.result_box.setPlainText(summary_text)
                 if hasattr(c, "results_summary_text"):
-                    c.results_summary_text.setPlainText(c.result_box.toPlainText())
+                    c.results_summary_text.setPlainText(summary_text)
             else:
-                c.result_box.setPlainText(tr("results.no_metrics", default="No metrics to display."))
+                no_metrics = tr("results.no_metrics", default="No metrics to display.")
+                c.result_box.setPlainText(no_metrics)
                 if hasattr(c, "results_summary_text"):
-                    c.results_summary_text.setPlainText(tr("results.no_metrics", default="No metrics to display."))
+                    c.results_summary_text.setPlainText(no_metrics)
 
         self._update_decision_snapshot(metrics_df)
 
@@ -3214,12 +3208,14 @@ class MLTrainerApp(QMainWindow):
 
         if layout_version == UI_LAYOUT_VERSION:
             # Model selection is inline (Step 3); keep side model panel hidden.
+            # Results Hub is embedded in Step 4 — default visible; respect saved preference only
+            # if user explicitly collapsed it (stored as "false").
             self._left_panel_visible = False
-            self._right_panel_visible = str(settings.value("ui/rightPanelVisible", "false")).lower() in ("true", "1", "yes")
+            self._right_panel_visible = str(settings.value("ui/rightPanelVisible", "true")).lower() in ("true", "1", "yes")
         else:
-            # New layout defaults: focus center workflow + results, keep model pool on demand.
+            # New layout or migrated session: show Results Hub by default.
             self._left_panel_visible = False
-            self._right_panel_visible = False
+            self._right_panel_visible = True
 
         if layout_version == UI_LAYOUT_VERSION:
             geometry = settings.value("ui/geometry")
@@ -3274,14 +3270,7 @@ class MLTrainerApp(QMainWindow):
         self._right_panel_visible = target_visible
 
         if hasattr(c, "right_panel"):
-            if target_visible:
-                c.right_panel.setVisible(True)
-                if hasattr(c, "skeleton_panel"):
-                    c.skeleton_panel.setVisible(False)
-            else:
-                c.right_panel.setVisible(False)
-                if hasattr(c, "skeleton_panel"):
-                    c.skeleton_panel.setVisible(True)
+            c.right_panel.setVisible(target_visible)
 
         self._sync_header_panel_buttons()
 

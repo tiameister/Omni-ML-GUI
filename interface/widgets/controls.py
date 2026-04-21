@@ -105,12 +105,6 @@ def apply_translations(w):
     w.model_hint_label.setText(
         tr("controls.workflow.step3_hint", default="Select which machine learning models you want to include in the evaluation phase.")
     )
-    if hasattr(w, "open_models_panel_btn"):
-        w.open_models_panel_btn.setText(tr("controls.buttons.choose_models", default="Choose Models..."))
-        w.open_models_panel_btn.setToolTip(
-            tr("controls.workflow.step3_button_tip", default="Open the model selection popup.")
-        )
-
     w.run_hint_label.setText(
         tr("controls.workflow.step4_hint", default="Initialize the training pipeline. Live monitoring and runtime context will stream below.")
     )
@@ -262,9 +256,6 @@ def apply_translations(w):
     w.dev_tabs.setTabText(0, tr("controls.dialogs.activity", default="Activity"))
     w.dev_tabs.setTabText(1, tr("controls.dialogs.notifications", default="Notifications"))
     w.dev_tabs.setTabText(2, tr("controls.dialogs.jobs", default="Jobs"))
-    # Legacy compatibility: results are now embedded in the right panel, not always a dialog.
-    if hasattr(w, "results_dialog"):
-        w.results_dialog.setWindowTitle(tr("controls.dialogs.results_hub", default="Results Hub"))
 
 
 def build_layout():
@@ -649,21 +640,6 @@ def build_layout():
 
     run_card_layout.addSpacing(16)
 
-    w.run_summary_card = QFrame()
-    w.run_summary_card.setObjectName("summaryCard")    
-    run_summary_layout = QVBoxLayout(w.run_summary_card)
-    run_summary_layout.setContentsMargins(16, 16, 16, 16)
-    run_summary_layout.setSpacing(8)
-    
-    run_summary_layout.addWidget(w.persist_output_checkbox)
-    
-    w.plot_summary_label = QLabel("")
-    w.plot_summary_label.setObjectName("hintLabel")
-    w.plot_summary_label.setWordWrap(True)
-    run_summary_layout.addWidget(w.plot_summary_label)
-
-    run_card_layout.addWidget(w.run_summary_card)
-
     w.runtime_hint_label = QLabel("Estimated time: waiting for model selection")
     w.runtime_hint_label.setObjectName("hintLabel")
 
@@ -688,17 +664,24 @@ def build_layout():
     train_controls_layout.addWidget(w.cancel_button)
     run_card_layout.addWidget(train_controls_frame)
 
-    # Divider between actions and results
-    divider = QFrame()
-    divider.setFrameShape(QFrame.Shape.HLine)
-    divider.setFrameShadow(QFrame.Shadow.Sunken)
-    divider.setStyleSheet("margin-top: 12px; margin-bottom: 12px; background: #e0e4ea; height: 2px;")
-    run_card_layout.addWidget(divider)
+    # Plot/analysis summary shown below the controls row (populated dynamically by the app).
+    w.plot_summary_label = QLabel("")
+    w.plot_summary_label.setObjectName("hintLabel")
+    w.plot_summary_label.setWordWrap(True)
+    run_card_layout.addWidget(w.plot_summary_label)
+
     w.progress_panel = QFrame()
     w.progress_panel.setObjectName("progressPanel")
     progress_layout = QVBoxLayout(w.progress_panel)
     progress_layout.setContentsMargins(10, 8, 10, 8)
     progress_layout.setSpacing(6)
+
+    # Divider is part of progress_panel so it only appears when training is active.
+    _progress_divider = QFrame()
+    _progress_divider.setFrameShape(QFrame.Shape.HLine)
+    _progress_divider.setFrameShadow(QFrame.Shadow.Sunken)
+    _progress_divider.setStyleSheet("margin-top: 4px; margin-bottom: 8px; background: #e0e4ea;")
+    progress_layout.addWidget(_progress_divider)
 
     top_row = QHBoxLayout()
     w.progress_title_label = QLabel("Execution Monitor")
@@ -915,9 +898,6 @@ def build_layout():
     w.results_summary_text.setPlaceholderText("Best model summary will appear here after training.")
     summary_layout.addWidget(w.results_summary_title)
     summary_layout.addWidget(w.results_summary_text)
-    # Idle: no duplicate placeholder — summary body is hidden until a run produces outputs.
-    w.results_summary_title.setVisible(False)
-    w.results_summary_text.setVisible(False)
 
     tables_tab = QWidget()
     tables_layout = QVBoxLayout(tables_tab)
@@ -1052,9 +1032,9 @@ def build_layout():
     footer_layout.addWidget(w.feedback_event_label, 1)
     outer_layout.addWidget(w.footer_bar, 0)
 
-    # Instead of an external popup dialog, embed the results right into Step 4
+    # Results Hub is embedded directly in Step 4 and always visible.
+    # Tabs start disabled (results_tabs.setEnabled(False)) and are enabled after training.
     w.right_panel = right_panel
-    w.right_panel.setVisible(False)
     run_card_layout.addWidget(w.right_panel)
 
     # Basit QSS ile daha ferah ve sade bir görünüm
