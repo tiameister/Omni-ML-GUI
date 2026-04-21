@@ -13,12 +13,15 @@ import pandas as pd
 from config import CV_REPEATS, CV_STRATIFY, DO_SHAP, OUTPUT_DIR, RSTATE, RUN_TAG, SHAP_DEPENDENCE_MODE, SHAP_VAR_THRESH
 from utils.logger import get_logger
 from utils.paths import (
+    EVALUATION_DIR,
+    FEATURE_SELECTION_DIR,
+    LEGACY_EVALUATION_DIR,
+    LEGACY_FEATURE_SELECTION_DIR,
+    build_run_path_map,
     get_run_model_dir,
     get_run_model_root,
     get_run_root,
-    get_run_subdir,
     get_supplements_root,
-    get_transient_run_root,
     make_run_id,
     safe_folder_name,
 )
@@ -341,32 +344,33 @@ def run_training(
     else:
         run_id_final = safe_folder_name(str(run_id), fallback="run")
 
-    if persist_outputs:
-        run_root = get_run_root(run_id_final, output_dir=OUTPUT_DIR, run_tag=persist_run_tag or RUN_TAG)
-    else:
-        run_root = get_transient_run_root(run_id_final)
+    # Always write to canonical output/runs. persist_outputs is UI save-state metadata.
+    run_root = get_run_root(run_id_final, output_dir=OUTPUT_DIR, run_tag=persist_run_tag or RUN_TAG)
 
     run_outdir = str(run_root)
+    path_map = build_run_path_map(run_root)
 
     out_info: dict[str, object] = {
         "run_id": run_id_final,
         "run_dir": run_outdir,
         "best_model": best,
         "persist_outputs": bool(persist_outputs),
+        "path_map": dict(path_map),
     }
 
-    analysis_root = os.path.join(run_outdir, "1_Overall_Evaluation")
+    analysis_root = str(path_map.get("metrics", os.path.join(run_outdir, EVALUATION_DIR)))
     os.makedirs(analysis_root, exist_ok=True)
     out_info["analysis_dir"] = analysis_root
-    model_root = str(get_run_model_root(run_root))
+    out_info["analysis_dir_legacy"] = str(path_map.get("evaluation_legacy", os.path.join(run_outdir, LEGACY_EVALUATION_DIR)))
+    model_root = str(path_map.get("models_root", get_run_model_root(run_root)))
     out_info["model_dir"] = model_root
-    supplements_root = str(get_supplements_root(run_root=run_root))
+    supplements_root = str(path_map.get("supplements_root", get_supplements_root(run_root=run_root)))
     out_info["supplements_dir"] = supplements_root
 
     _safe_call(callbacks.log, f"Run output folder: {run_outdir}", context="log")
     _safe_call(
         callbacks.log,
-        f"Output persistence: {'enabled' if persist_outputs else 'temporary (not auto-saved)'}",
+        f"Output save mode: {'auto-saved' if persist_outputs else 'manual save (already in canonical runs folder)'}",
         context="log",
     )
 
@@ -392,8 +396,10 @@ def run_training(
         LOGGER.exception("Failed to persist one or more model artifacts")
 
     # Provenance
-    selection_dir = str(get_run_subdir(run_root, "0_Feature_Selection"))
+    selection_dir = str(path_map.get("feature_selection", os.path.join(run_outdir, FEATURE_SELECTION_DIR)))
+    os.makedirs(selection_dir, exist_ok=True)
     out_info["selection_dir"] = selection_dir
+    out_info["selection_dir_legacy"] = str(path_map.get("feature_selection_legacy", os.path.join(run_outdir, LEGACY_FEATURE_SELECTION_DIR)))
     try:
         selected_feats = list(features or [])
         target_col = str(target or "")
@@ -423,6 +429,14 @@ def run_training(
             lines.append("No variables with missingness were excluded by UI.")
         with open(os.path.join(selection_dir, "ui_feature_selection_summary.txt"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
+
+        legacy_selection_dir = str(path_map.get("feature_selection_legacy", ""))
+        if legacy_selection_dir and os.path.realpath(legacy_selection_dir) != os.path.realpath(selection_dir):
+            os.makedirs(legacy_selection_dir, exist_ok=True)
+            with open(os.path.join(legacy_selection_dir, "ui_feature_selection_meta.json"), "w", encoding="utf-8") as f:
+                json.dump(ui_meta, f, ensure_ascii=False, indent=2)
+            with open(os.path.join(legacy_selection_dir, "ui_feature_selection_summary.txt"), "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
     except Exception:
         LOGGER.exception("Failed to persist feature selection provenance")
 
@@ -534,6 +548,15 @@ def run_training(
             "model_hyperparam_presets": {
                 name: preset_choices.get(name, "__custom__")
                 for name in sanitized_hparams
+            },
+            "paths": {
+                "run_root": run_outdir,
+                "models_root": model_root,
+                "evaluation_legacy": str(path_map.get("evaluation_legacy", os.path.join(run_outdir, LEGACY_EVALUATION_DIR))),
+                "feature_selection_legacy": str(path_map.get("feature_selection_legacy", os.path.join(run_outdir, LEGACY_FEATURE_SELECTION_DIR))),
+                "supplements_root": supplements_root,
+                "metrics": str(path_map.get("metrics", "")),
+                "feature_selection": str(path_map.get("feature_selection", "")),
             },
         }
         with open(os.path.join(run_outdir, "run_manifest.json"), "w", encoding="utf-8") as f:

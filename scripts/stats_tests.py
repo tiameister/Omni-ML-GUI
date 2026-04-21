@@ -1,5 +1,6 @@
 """
 Statistical tests across CV strategies or models using per-split scores.
+Path policy: reads canonical folders first; legacy fallback remains supported via run metadata.
 Outputs:
 - Corrected Resampled T-tests between top models and baselines
 - FDR Adjusted p-values
@@ -11,6 +12,7 @@ import glob
 import numpy as np
 import pandas as pd
 from statsmodels.stats.multitest import multipletests
+from utils.paths import EVALUATION_DIR
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -41,10 +43,10 @@ def corrected_resampled_ttest(scores_a: np.ndarray, scores_b: np.ndarray, k: int
 
 def _read_model_scores(run_root: str):
     """Read cv_splits.xlsx from the current run root."""
-    path = os.path.join(run_root, "1_Overall_Evaluation", "cv_splits.xlsx")
+    path = os.path.join(run_root, EVALUATION_DIR, "cv_splits.xlsx")
     if not os.path.exists(path):
         # Fallback to CSVs
-        csvs = glob.glob(os.path.join(run_root, "1_Overall_Evaluation", "cv_splits_*.csv"))
+        csvs = glob.glob(os.path.join(run_root, EVALUATION_DIR, "cv_splits_*.csv"))
         data = {}
         for cp in csvs:
             model = os.path.basename(cp).replace("cv_splits_", "").replace(".csv", "")

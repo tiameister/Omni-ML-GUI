@@ -1,5 +1,7 @@
 """Create Q1-level feature stability visualization combining rank distribution and inclusion probabilities.
 
+Path policy: reads canonical folders first; legacy fallback remains supported via run metadata.
+
 Data sources (produced by xai_consistency.py):
  - output/xai_consistency/bootstrap_rank_metrics.csv
 
@@ -17,13 +19,14 @@ Outputs:
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import pandas as pd
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-from utils.paths import get_supplements_root
+from utils.paths import EVALUATION_DIR, get_supplements_root
 
 ROOT = Path(__file__).resolve().parents[1]
 _analysis_root = str(os.environ.get("MLTRAINER_ANALYSIS_ROOT", "") or "").strip()
@@ -31,7 +34,7 @@ _run_root = str(os.environ.get("MLTRAINER_RUN_ROOT", "") or "").strip()
 if _analysis_root:
     XAI_DIR = Path(_analysis_root) / "xai_consistency"
 elif _run_root:
-    XAI_DIR = Path(_run_root) / "1_Overall_Evaluation" / "xai_consistency"
+    XAI_DIR = Path(_run_root) / EVALUATION_DIR / "xai_consistency"
 else:
     XAI_DIR = ROOT / "output" / "xai_consistency"
 

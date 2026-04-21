@@ -5,6 +5,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+from utils.paths import EVALUATION_DIR
 try:
     from config import FEATURE_NAME_MAP
 except Exception:
@@ -36,7 +37,7 @@ def _save_fig_formats(fig_path_base: str):
 
 def generate_regression_stats(model_name: str, best_pipe, X, y, outdir: str):
     # Direct outputs into evaluation subfolder for modularized structure
-    outdir_eval = os.path.join(outdir, '1_Overall_Evaluation')
+    outdir_eval = os.path.join(outdir, EVALUATION_DIR)
     os.makedirs(outdir_eval, exist_ok=True)
     try:
         try:

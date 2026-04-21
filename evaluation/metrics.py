@@ -10,6 +10,7 @@ from sklearn.inspection import permutation_importance
 
 from utils.plotting_helpers import save_bar
 from utils.logger import get_logger
+from utils.paths import EVALUATION_DIR
 import numpy as np
 
 
@@ -47,7 +48,7 @@ def save_model_metrics(outdir: str, metrics_df: pd.DataFrame, filename_prefix: s
     Saves model performance metrics and creates visual bar plots.
     """
     os.makedirs(outdir, exist_ok=True)
-    eval_dir = os.path.join(outdir, '1_Overall_Evaluation')
+    eval_dir = os.path.join(outdir, EVALUATION_DIR)
     os.makedirs(eval_dir, exist_ok=True)
     metrics_out = metrics_df.copy(deep=True)
     if "R2_CV" in metrics_out.columns:
@@ -109,7 +110,7 @@ def save_cv_splits(outdir: str, cv_scores_by_model: dict):
     Sheet per model with columns: split, R2, MAE, RMSE.
     """
     os.makedirs(outdir, exist_ok=True)
-    eval_dir = os.path.join(outdir, '1_Overall_Evaluation')
+    eval_dir = os.path.join(outdir, EVALUATION_DIR)
     os.makedirs(eval_dir, exist_ok=True)
     xlsx_path = os.path.join(eval_dir, 'cv_splits.xlsx')
     try:

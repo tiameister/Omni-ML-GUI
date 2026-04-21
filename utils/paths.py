@@ -1,7 +1,6 @@
 import os
 import re
 import sys
-import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -125,20 +124,6 @@ def get_run_root(run_id: str, output_dir: str = "output", run_tag: str | None = 
     return ensure_directory(get_runs_root(output_dir=output_dir, run_tag=run_tag) / run_id)
 
 
-def get_transient_runs_root() -> Path:
-    """Ephemeral root used when user disables persistent disk output."""
-    return ensure_directory(Path(tempfile.gettempdir()) / "mltrainer" / "runs")
-
-
-def get_transient_run_root(run_id: str) -> Path:
-    run_id = safe_folder_name(run_id, fallback="run")
-    return ensure_directory(get_transient_runs_root() / run_id)
-
-
-def get_run_subdir(run_root: Path, name: str) -> Path:
-    return ensure_directory(Path(run_root) / safe_folder_name(name, fallback="dir"))
-
-
 def get_run_model_root(run_root: Path) -> Path:
     return ensure_directory(Path(run_root) / "models")
 
@@ -173,11 +158,35 @@ def get_supplements_root(
 # Canonical output sub-folder name constants.
 # Use these everywhere instead of bare string literals to prevent typos and
 # make refactoring a one-line change.
-EVALUATION_DIR = "1_Overall_Evaluation"
-DIAGNOSTICS_DIR = "2_Model_Diagnostics"   # residuals, curves, correlation
-MANUSCRIPT_DIR = "3_Manuscript_Figures"   # feature-importance, SHAP, PDP
+EVALUATION_DIR = "metrics"
+DIAGNOSTICS_DIR = "diagnostics"
+MANUSCRIPT_DIR = "figures"
 MODELS_DIR = "models"
-EXPLAINABILITY_DIR = "explainability"
+METRICS_DIR = "metrics"
+FEATURE_SELECTION_DIR = "feature_selection"
+LEGACY_EVALUATION_DIR = "1_Overall_Evaluation"
+LEGACY_FEATURE_SELECTION_DIR = "0_Feature_Selection"
+LEGACY_MANUSCRIPT_DIR = "3_Manuscript_Figures"
+
+
+def build_run_path_map(run_root: str | Path) -> dict[str, str]:
+    """Return canonical + legacy run subdirectory map (all created)."""
+    root = Path(run_root)
+    mapping = {
+        # Canonical schema (target)
+        "metrics": str(ensure_directory(root / METRICS_DIR)),
+        "feature_selection": str(ensure_directory(root / FEATURE_SELECTION_DIR)),
+        "diagnostics": str(ensure_directory(root / DIAGNOSTICS_DIR)),
+        "figures": str(ensure_directory(root / MANUSCRIPT_DIR)),
+        # Legacy schema (compatibility)
+        "evaluation_legacy": str(ensure_directory(root / LEGACY_EVALUATION_DIR)),
+        "feature_selection_legacy": str(ensure_directory(root / LEGACY_FEATURE_SELECTION_DIR)),
+        "diagnostics_legacy": str(ensure_directory(root / "2_Model_Diagnostics")),
+        "figures_legacy": str(ensure_directory(root / LEGACY_MANUSCRIPT_DIR)),
+        "models_root": str(ensure_directory(root / MODELS_DIR)),
+        "supplements_root": str(ensure_directory(root / "analysis" / "supplements")),
+    }
+    return mapping
 
 
 def ensure_outdir(p: str = "output") -> str:

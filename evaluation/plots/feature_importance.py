@@ -5,6 +5,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 import pandas as pd
+from utils.paths import MANUSCRIPT_DIR
 
 # Force a font with wide Unicode coverage and proper minus sign handling
 rcParams.update({
@@ -64,7 +65,7 @@ def plot_feature_importance_heatmap(
     X,
     y,
     outdir: str):
-    out_expl = os.path.join(outdir, '3_Manuscript_Figures', model_name)
+    out_expl = os.path.join(outdir, MANUSCRIPT_DIR, model_name)
     os.makedirs(out_expl, exist_ok=True)
     try:
         model = pipe.named_steps.get('model', None)

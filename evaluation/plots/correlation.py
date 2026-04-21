@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+from utils.paths import DIAGNOSTICS_DIR
 
 try:
     from config import SAVE_PDF
@@ -25,7 +26,7 @@ def _save_fig_formats(fig_path_base: str):
 
 def plot_correlation_matrix(model_name: str, X, y, outdir: str):
     import pandas as pd
-    out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
+    out_diag = os.path.join(outdir, DIAGNOSTICS_DIR, model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
         # Combine features with target and compute numeric-only correlations

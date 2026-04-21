@@ -1,5 +1,6 @@
 import os
 import re
+from utils.paths import DIAGNOSTICS_DIR, EVALUATION_DIR, FEATURE_SELECTION_DIR, MANUSCRIPT_DIR
 
 def write_manuscript_guide():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -17,7 +18,7 @@ def write_manuscript_guide():
             if subdirs:
                 output_location = os.path.join(runs_dir, subdirs[0])
     
-    manuscript_dir = os.path.join(output_location, "3_Manuscript_Figures")
+    manuscript_dir = os.path.join(output_location, MANUSCRIPT_DIR)
     os.makedirs(manuscript_dir, exist_ok=True)
     guide_path = os.path.join(manuscript_dir, "MANUSCRIPT_REPORT_GUIDE.txt")
     
@@ -87,7 +88,10 @@ def write_manuscript_guide():
     # --- WRAP UP ---
     content.append("="*80)
     content.append("QUICK TIPS FOR WRITING:")
-    content.append("- Folder Structure: Look in '1_Overall_Evaluation/' for model comparisons. Models are isolated inside '2_Model_Diagnostics/' and '3_Manuscript_Figures/' with subfolders, so running 10+ models won't clutter the root directory.")
+    content.append(
+        f"- Folder Structure: Look in '{EVALUATION_DIR}/' for model comparisons and '{FEATURE_SELECTION_DIR}/' for selection outputs. "
+        f"Models are isolated inside '{DIAGNOSTICS_DIR}/' and '{MANUSCRIPT_DIR}/' with subfolders, so running 10+ models won't clutter the root directory."
+    )
     content.append("- Do not overload the main results with 10 identical graphics. Pick the best model for the SHAP/Predicted plots and relegate the rest to the supplements.")
     content.append("- Explicitly mention 'SHAP (SHapley Additive exPlanations) values were utilized for model explainability' in your methods.")
     content.append("- Use 'tight' bounding box geometries for figures directly in your Word/LaTeX manuscript to prevent cropped axis labels.")

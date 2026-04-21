@@ -56,7 +56,7 @@ from interface.widgets.checkboxes import get_plot_pages, get_optional_script_lab
 from data.file_types import SUPPORTED_DATASET_EXTENSIONS
 from config import OUTPUT_DIR, RUN_TAG
 from utils.logger import get_logger
-from utils.paths import get_output_root, get_project_root, safe_folder_name
+from utils.paths import EVALUATION_DIR, LEGACY_EVALUATION_DIR, LEGACY_FEATURE_SELECTION_DIR, LEGACY_MANUSCRIPT_DIR, MANUSCRIPT_DIR, get_output_root, get_project_root, safe_folder_name
 from utils.text import normalize_quotes_ascii
 from utils.localization import i18n, tr
 
@@ -2908,6 +2908,7 @@ class MLTrainerApp(QMainWindow):
 
         if self._latest_result_dir:
             self._populate_results_gallery(self._latest_result_dir)
+            run_paths = self._resolve_run_paths(self._latest_result_dir, out_info)
 
             best = str(metrics_df.iloc[0]["model"]) if metrics_df is not None and not metrics_df.empty else None
             if best and hasattr(c, "shap_model_filter"):
@@ -2917,29 +2918,68 @@ class MLTrainerApp(QMainWindow):
                     self._apply_shap_filters()
 
             fe_prefix = "feature_engineering_" if getattr(self.state, "fe_enabled", False) else ""
-            # R² bar chart is saved under 1_Overall_Evaluation by save_model_metrics.
+            # R² bar chart is saved under canonical evaluation directory.
             r2_base = f"{fe_prefix}metrics_R2_cv.png" if fe_prefix else "metrics_R2_cv.png"
-            r2_png = os.path.join(self._latest_result_dir, "1_Overall_Evaluation", r2_base)
+            r2_parent = run_paths.get("metrics") or run_paths.get("evaluation_legacy") or self._latest_result_dir
+            r2_png = os.path.join(r2_parent, r2_base)
             if os.path.exists(r2_png):
                 self._load_image_to_label(r2_png, c.figures_img)
 
             if best:
                 # generate_shap_summary saves under:
-                #   <run_dir>/models/<safe_model_name>/3_Manuscript_Figures/<shap_key>/
+                #   <run_dir>/models/<safe_model_name>/<figures_dir>/<shap_key>/
                 # where shap_key = fe_prefix + model_name.
                 shap_model_key = fe_prefix + best
                 shap_png = os.path.join(
-                    self._latest_result_dir,
-                    "models",
+                    run_paths.get("models_root", os.path.join(self._latest_result_dir, "models")),
                     safe_folder_name(best, fallback="model"),
-                    "3_Manuscript_Figures",
+                    MANUSCRIPT_DIR,
                     shap_model_key,
                     f"{shap_model_key}_shap_summary_beeswarm.png",
                 )
+                if not os.path.exists(shap_png):
+                    shap_png = os.path.join(
+                        run_paths.get("models_root", os.path.join(self._latest_result_dir, "models")),
+                        safe_folder_name(best, fallback="model"),
+                        run_paths.get("figures_legacy", LEGACY_MANUSCRIPT_DIR),
+                        shap_model_key,
+                        f"{shap_model_key}_shap_summary_beeswarm.png",
+                    )
                 if os.path.exists(shap_png):
                     self._load_image_to_label(shap_png, c.shap_img)
 
         self._sync_results_ui_state()
+
+    def _resolve_run_paths(self, run_dir: str, out_info: object) -> dict[str, str]:
+        """Resolve run subdirectories from runtime info first, then manifest."""
+        resolved: dict[str, str] = {}
+        try:
+            if isinstance(out_info, dict):
+                raw_map = out_info.get("path_map")
+                if isinstance(raw_map, dict):
+                    resolved.update({str(k): str(v) for k, v in raw_map.items() if v})
+        except Exception:
+            pass
+        try:
+            manifest_path = os.path.join(str(run_dir or ""), "run_manifest.json")
+            if os.path.exists(manifest_path):
+                with open(manifest_path, "r", encoding="utf-8") as fh:
+                    manifest = json.load(fh) or {}
+                manifest_paths = manifest.get("paths")
+                if isinstance(manifest_paths, dict):
+                    resolved.update({str(k): str(v) for k, v in manifest_paths.items() if v})
+        except Exception:
+            LOGGER.exception("Failed to resolve run paths from manifest")
+
+        run_dir_s = str(run_dir or "")
+        if run_dir_s:
+            resolved.setdefault("metrics", os.path.join(run_dir_s, EVALUATION_DIR))
+            resolved.setdefault("evaluation_legacy", os.path.join(run_dir_s, LEGACY_EVALUATION_DIR))
+            resolved.setdefault("feature_selection_legacy", os.path.join(run_dir_s, LEGACY_FEATURE_SELECTION_DIR))
+            resolved.setdefault("figures_legacy", os.path.join(run_dir_s, LEGACY_MANUSCRIPT_DIR))
+            resolved.setdefault("models_root", os.path.join(run_dir_s, "models"))
+            resolved.setdefault("supplements_root", os.path.join(run_dir_s, "analysis", "supplements"))
+        return resolved
 
     def _on_save_current_run(self):
         if not self._latest_result_dir or not os.path.isdir(self._latest_result_dir):
@@ -2965,30 +3005,54 @@ class MLTrainerApp(QMainWindow):
         os.makedirs(target_runs, exist_ok=True)
 
         safe_run_id = safe_folder_name(run_id, fallback="run")
-        dest_dir = os.path.join(target_runs, safe_run_id)
-        if os.path.exists(dest_dir):
-            import time
-            dest_dir = os.path.join(target_runs, f"{safe_run_id}_{int(time.time())}")
+        canonical_dir = os.path.join(target_runs, safe_run_id)
+        src_real = os.path.realpath(self._latest_result_dir)
+        dst_real = os.path.realpath(canonical_dir)
+        dest_dir = canonical_dir
 
-        try:
-            import shutil
-            shutil.copytree(self._latest_result_dir, dest_dir)
-        except Exception as e:
-            QMessageBox.warning(
-                self,
-                tr("results.save_run_title", default="Save Run"),
-                tr("results.save_failed", default="Run could not be saved:\n{error}", error=e),
-            )
-            return
+        # New algorithm writes directly to canonical output/runs. Copy only
+        # for legacy runs that came from a non-canonical location.
+        if src_real != dst_real:
+            if os.path.exists(dest_dir):
+                import time
+                dest_dir = os.path.join(target_runs, f"{safe_run_id}_{int(time.time())}")
+            try:
+                import shutil
+                shutil.copytree(self._latest_result_dir, dest_dir)
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    tr("results.save_run_title", default="Save Run"),
+                    tr("results.save_failed", default="Run could not be saved:\n{error}", error=e),
+                )
+                return
 
         self._latest_result_saved = True
         if isinstance(self._latest_run_info, dict):
             self._latest_run_info["persist_outputs"] = True
             self._latest_run_info["saved_dir"] = dest_dir
+        self._mark_run_manifest_saved(dest_dir)
 
         self._sync_results_ui_state()
         self.statusBar().showMessage(tr("status.run_saved", default="Run saved: {path}", path=dest_dir))
         self._push_notification("success", tr("notifications.run_saved_to", default="Run saved to {path}", path=dest_dir))
+
+    def _mark_run_manifest_saved(self, run_dir: str):
+        try:
+            manifest_path = os.path.join(str(run_dir or ""), "run_manifest.json")
+            if not os.path.exists(manifest_path):
+                return
+            with open(manifest_path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            if not isinstance(payload, dict):
+                return
+            payload["persist_outputs"] = True
+            payload["saved_via_ui"] = True
+            payload["saved_at"] = int(time.time())
+            with open(manifest_path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
+        except Exception:
+            LOGGER.exception("Failed to update run manifest save metadata")
 
     @staticmethod
     def _normalize_publication_term(value) -> str:

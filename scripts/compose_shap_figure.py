@@ -1,8 +1,10 @@
 """
 Compose SHAP summary + dependence plots into a single figure.
 
+Path policy: reads canonical folders first, then legacy manuscript folders for older runs.
+
 Searches for SHAP exports saved by generate_shap_summary() under:
-  <run_root>/models/<model_name>/3_Manuscript_Figures/<model_key>/
+  <run_root>/models/<model_name>/figures/<model_key>/
 
 Assembles the following panels:
  - SHAP summary bar
@@ -21,6 +23,7 @@ from __future__ import annotations
 import glob
 import os
 from typing import Dict, List
+from utils.paths import LEGACY_MANUSCRIPT_DIR, MANUSCRIPT_DIR
 
 import matplotlib.pyplot as plt
 from matplotlib.image import imread
@@ -29,8 +32,10 @@ from matplotlib.image import imread
 def find_rf_shap_dir(base: str, run_root: str | None = None) -> str | None:
     candidates = []
     if run_root and os.path.isdir(run_root):
-        candidates.extend(glob.glob(os.path.join(run_root, "models", "*", "3_Manuscript_Figures")))
-    candidates.extend(glob.glob(os.path.join(base, "output", "*_output*", "3_Manuscript_Figures")))
+        candidates.extend(glob.glob(os.path.join(run_root, "models", "*", MANUSCRIPT_DIR)))
+        candidates.extend(glob.glob(os.path.join(run_root, "models", "*", LEGACY_MANUSCRIPT_DIR)))
+    candidates.extend(glob.glob(os.path.join(base, "output", "*_output*", MANUSCRIPT_DIR)))
+    candidates.extend(glob.glob(os.path.join(base, "output", "*_output*", LEGACY_MANUSCRIPT_DIR)))
     candidates = sorted(set(candidates), key=lambda p: (len(p), p), reverse=True)
     for p in candidates:
         # Check presence of core images
@@ -130,7 +135,7 @@ def main() -> None:
     if shap_dir is None:
         raise SystemExit(
             "Could not locate SHAP exports under "
-            "output/**/<model_name>/3_Manuscript_Figures. "
+            "output/**/<model_name>/figures. "
             "Set MLTRAINER_RUN_ROOT to the specific run directory."
         )
     files = expect_files(shap_dir)

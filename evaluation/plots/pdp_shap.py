@@ -28,6 +28,7 @@ from utils.plotting_helpers import (
     clip_outliers,
     plot_shap_dependence as plot_shap_dependence_helper,
     top_raw_features_by_shap)
+from utils.paths import MANUSCRIPT_DIR
 
 # Optional: SHAP
 try:
@@ -152,7 +153,7 @@ def _raise_if_cancelled(cancel_cb=None):
             return
 
 def generate_pdp(best_model_name: str, best_pipe, X, top_features: list, outdir: str):
-    out_expl = os.path.join(outdir, '3_Manuscript_Figures', best_model_name)
+    out_expl = os.path.join(outdir, MANUSCRIPT_DIR, best_model_name)
     os.makedirs(out_expl, exist_ok=True)
     try:
         X = X.copy().astype(float)
@@ -500,7 +501,7 @@ def generate_shap_summary(
     var_thresh: float | None = SHAP_VAR_THRESH,
     dependence_mode: str | None = None,
     cancel_cb=None):
-    out_expl = os.path.join(outdir, '3_Manuscript_Figures', best_model_name)
+    out_expl = os.path.join(outdir, MANUSCRIPT_DIR, best_model_name)
     os.makedirs(out_expl, exist_ok=True)
     if not SHAP_OK:
         with open(os.path.join(out_expl, f"{best_model_name}_shap_warning.txt"), "w", encoding="utf-8") as f:
@@ -716,7 +717,7 @@ def generate_shap_dependence(
     *,
     y_limit: Optional[Tuple[float, float]] = None,
     clip_limit: Optional[float] = None):
-    out_expl = os.path.join(outdir, '3_Manuscript_Figures', best_model_name)
+    out_expl = os.path.join(outdir, MANUSCRIPT_DIR, best_model_name)
     os.makedirs(out_expl, exist_ok=True)
     if not SHAP_OK:
         with open(os.path.join(out_expl, f"{best_model_name}_shap_warning.txt"), "w", encoding="utf-8") as f:

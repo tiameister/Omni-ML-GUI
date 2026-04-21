@@ -1,6 +1,8 @@
 """
 Run-scoped calibration summaries and cumulative feature-importance reports.
 
+Path policy: reads canonical folders first; legacy fallback remains supported via run metadata.
+
 Preferred runtime (from GUI optional analysis runner):
 - MLTRAINER_RUN_ROOT=<.../output/runs/<run_id>>
 - MLTRAINER_ANALYSIS_ROOT=<.../output/runs/<run_id>/analysis>
@@ -15,7 +17,7 @@ import glob
 import json
 import math
 import os
-from utils.paths import EVALUATION_DIR
+from utils.paths import EVALUATION_DIR, MANUSCRIPT_DIR
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -288,7 +290,7 @@ def calibration_workflow(run_root: str, analysis_root: str) -> None:
 
 
 def find_importance_files(run_root: str) -> List[Tuple[str, str]]:
-    pattern = os.path.join(run_root, "models", "*", "3_Manuscript_Figures", "*feature_importance.xlsx")
+    pattern = os.path.join(run_root, "models", "*", MANUSCRIPT_DIR, "*feature_importance.xlsx")
     files: List[Tuple[str, str]] = []
     for path in glob.glob(pattern):
         fname = os.path.basename(path)
@@ -366,7 +368,7 @@ def load_shap_means_for_model(run_root: str, model_name: str) -> Dict[str, float
     if not model_name:
         return {}
     key = _norm_token(model_name)
-    pattern = os.path.join(run_root, "models", "*", "3_Manuscript_Figures", "*shap_values_top*.xlsx")
+    pattern = os.path.join(run_root, "models", "*", MANUSCRIPT_DIR, "*shap_values_top*.xlsx")
     candidates = []
     for path in glob.glob(pattern):
         if key and key not in _norm_token(os.path.basename(path)):

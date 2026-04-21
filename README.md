@@ -81,22 +81,24 @@ Outputs are organized neatly in your local directory, ready to be attached to yo
 ```
 output/runs/test_run_.../
 ├── experiment_metadata.json
-├── 0_Feature_Selection/
-├── 1_Overall_Evaluation/
+├── feature_selection/
+├── metrics/
 │   ├── metrics.xlsx (CV Metrics for all models)
 │   ├── R2_cv_bar.png 
 │   └── permutation_importance_*.png
-├── 2_Model_Diagnostics/
+├── diagnostics/
 │   └── HistGB/
 │       ├── regression_stats.xlsx
 │       ├── learning_curve.png
 │       └── residuals_plot.png
-├── 3_Manuscript_Figures/
+├── figures/
 │   └── HistGB/
 │       ├── histgb_feature_importance.png
 │       └── histgb_shap_summary.png
 └── Run_Log_and_Warnings.md
 ```
+
+Legacy folders (`0_Feature_Selection`, `1_Overall_Evaluation`, `2_Model_Diagnostics`, `3_Manuscript_Figures`) are still recognized for backward compatibility when loading older runs.
 
 
 ## Batch Execution (For Advanced Users)

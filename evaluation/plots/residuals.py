@@ -9,6 +9,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
+from utils.paths import DIAGNOSTICS_DIR
 
 try:
     from config import SAVE_PDF
@@ -38,7 +39,7 @@ def plot_residuals(
     outdir: str,
     preds=None,
     cv=5):
-    out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
+    out_diag = os.path.join(outdir, DIAGNOSTICS_DIR, model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
         if preds is None:
@@ -86,7 +87,7 @@ def plot_residual_distribution(
     outdir: str,
     preds=None,
     cv=5):
-    out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
+    out_diag = os.path.join(outdir, DIAGNOSTICS_DIR, model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
         if preds is None:
@@ -121,7 +122,7 @@ def plot_qq(
     outdir: str,
     preds=None,
     cv=5):
-    out_diag = os.path.join(outdir, '2_Model_Diagnostics', model_name)
+    out_diag = os.path.join(outdir, DIAGNOSTICS_DIR, model_name)
     os.makedirs(out_diag, exist_ok=True)
     try:
         if preds is None:

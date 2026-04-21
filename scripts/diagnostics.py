@@ -1,5 +1,7 @@
 """
 Diagnostics for best model: residual plots and heteroskedasticity test.
+
+Path policy: writes to canonical folders first, with legacy fallback reads for older runs.
 Outputs:
 - output/diagnostics/residuals.png
 - output/diagnostics/residual_distribution.png
@@ -9,7 +11,7 @@ Outputs:
 from __future__ import annotations
 
 import os
-from utils.paths import EVALUATION_DIR
+from utils.paths import DIAGNOSTICS_DIR, EVALUATION_DIR, FEATURE_SELECTION_DIR, LEGACY_FEATURE_SELECTION_DIR
 import json
 import pandas as pd
 from statsmodels.stats.diagnostic import het_breuschpagan
@@ -31,11 +33,11 @@ except Exception:
     CV_FOLDS = 5
 
 if ANALYSIS_ROOT:
-    OUTDIR = os.path.join(ANALYSIS_ROOT, '2_Model_Diagnostics')
+    OUTDIR = os.path.join(ANALYSIS_ROOT, DIAGNOSTICS_DIR)
 elif RUN_ROOT and os.path.isdir(RUN_ROOT):
-    OUTDIR = os.path.join(RUN_ROOT, EVALUATION_DIR, '2_Model_Diagnostics')
+    OUTDIR = os.path.join(RUN_ROOT, EVALUATION_DIR, DIAGNOSTICS_DIR)
 else:
-    OUTDIR = os.path.join(ROOT, OUTPUT_ROOT, '2_Model_Diagnostics')
+    OUTDIR = os.path.join(ROOT, OUTPUT_ROOT, DIAGNOSTICS_DIR)
 os.makedirs(OUTDIR, exist_ok=True)
 
 
@@ -63,7 +65,9 @@ def load_best_meta():
                         if best_model:
                             meta = {'best_model': best_model}
                             # Also try loading feature list from selection if available
-                            sel = os.path.join(RUN_ROOT, '0_Feature_Selection', 'feature_selection_meta.json')
+                            sel = os.path.join(RUN_ROOT, FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
+                            if not os.path.exists(sel):
+                                sel = os.path.join(RUN_ROOT, LEGACY_FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
                             if os.path.exists(sel):
                                 with open(sel, 'r', encoding='utf-8') as f:
                                     sel_data = json.load(f)
@@ -74,7 +78,9 @@ def load_best_meta():
                     LOGGER.exception("Failed reading metrics workbook: %s", metrics_xlsx)
 
         # Fallback to feature_selection_meta.json if manifest/metrics didn't work but we have RUN_ROOT
-        sel = os.path.join(RUN_ROOT, '0_Feature_Selection', 'feature_selection_meta.json')
+        sel = os.path.join(RUN_ROOT, FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
+        if not os.path.exists(sel):
+            sel = os.path.join(RUN_ROOT, LEGACY_FEATURE_SELECTION_DIR, 'feature_selection_meta.json')
         if os.path.exists(sel):
             try:
                 with open(sel, 'r', encoding='utf-8') as f:

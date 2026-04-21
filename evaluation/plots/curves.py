@@ -5,6 +5,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.model_selection import learning_curve
+from utils.paths import DIAGNOSTICS_DIR, MANUSCRIPT_DIR
 
 
 try:
@@ -39,7 +40,7 @@ def plot_learning_curve(
     y,
     outdir: str,
     cv=5):
-    out_eval = os.path.join(outdir, '3_Manuscript_Figures', model_name)
+    out_eval = os.path.join(outdir, MANUSCRIPT_DIR, model_name)
     os.makedirs(out_eval, exist_ok=True)
     try:
         train_sizes, train_scores, cv_scores = learning_curve(
@@ -110,7 +111,7 @@ def plot_predictions_vs_actual(
     outdir: str,
     preds=None,
     cv=5):
-    out_eval = os.path.join(outdir, '2_Model_Diagnostics', model_name)
+    out_eval = os.path.join(outdir, DIAGNOSTICS_DIR, model_name)
     os.makedirs(out_eval, exist_ok=True)
     try:
         if preds is None:
