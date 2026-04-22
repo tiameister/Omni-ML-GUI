@@ -9,6 +9,7 @@ Expected workflow on Windows:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import shutil
@@ -20,6 +21,20 @@ from pathlib import Path
 def _run(cmd: list[str], cwd: Path) -> None:
     print(">", " ".join(cmd))
     subprocess.run(cmd, cwd=str(cwd), check=True)
+
+
+def _load_build_meta(root: Path) -> dict[str, str]:
+    meta_path = root / "build_meta.json"
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Missing build metadata file: {meta_path}")
+    with open(meta_path, "r", encoding="utf-8") as fh:
+        meta = json.load(fh) or {}
+
+    required = ("app_name", "exe_name", "version", "publisher", "url", "copyright")
+    missing = [k for k in required if not str(meta.get(k, "")).strip()]
+    if missing:
+        raise ValueError(f"build_meta.json is missing required keys: {', '.join(missing)}")
+    return {k: str(v).strip() for k, v in meta.items()}
 
 
 def _find_iscc() -> str | None:
@@ -48,8 +63,9 @@ def main() -> None:
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
+    meta = _load_build_meta(root)
     iss_script = root / "installer" / "OmniMLGUI.iss"
-    dist_exe = root / "dist" / "OmniMLGUI" / "OmniMLGUI.exe"
+    dist_exe = root / "dist" / meta["exe_name"] / f"{meta['exe_name']}.exe"
 
     if platform.system().lower() != "windows":
         print(
@@ -62,7 +78,7 @@ def main() -> None:
 
     if not args.skip_exe_check and not dist_exe.exists():
         raise FileNotFoundError(
-            "Expected EXE not found at dist/OmniMLGUI/OmniMLGUI.exe. "
+            f"Expected EXE not found at dist/{meta['exe_name']}/{meta['exe_name']}.exe. "
             "Run: python scripts/build_windows_exe.py --mode fast --clean-output"
         )
 
@@ -73,9 +89,20 @@ def main() -> None:
             "Install Inno Setup 6: https://jrsoftware.org/isinfo.php"
         )
 
-    _run([iscc, str(iss_script)], cwd=root)
+    cmd = [
+        iscc,
+        f"/DAppName={meta['app_name']}",
+        f"/DAppVersion={meta['version']}",
+        f"/DAppPublisher={meta['publisher']}",
+        f"/DAppURL={meta['url']}",
+        f"/DAppExeName={meta['exe_name']}.exe",
+        f"/DAppCopyright={meta['copyright']}",
+        str(iss_script),
+    ]
+    _run(cmd, cwd=root)
     print("\nInstaller build complete.")
-    print(f"Output: {root / 'dist' / 'OmniMLGUI-Setup.exe'}")
+    setup_file = f"{meta['exe_name']}-Setup.exe"
+    print(f"Output: {root / 'dist' / setup_file}")
 
 
 if __name__ == "__main__":

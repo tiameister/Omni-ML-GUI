@@ -1,12 +1,24 @@
 ; Inno Setup script for Omni-ML-GUI
 ; Build this after generating dist/OmniMLGUI/ via PyInstaller fast mode.
 
-#define AppName "Omni-ML-GUI"
-#define AppVersion "1.0.1"
-#define AppPublisher "Taha Ilter Akar"
-#define AppURL "https://github.com/tiameister/Omni-ML-GUI"
-#define AppExeName "OmniMLGUI.exe"
-#define AppCopyright "Copyright (c) 2026 Taha Ilter Akar"
+#ifndef AppName
+  #define AppName "Omni-ML-GUI"
+#endif
+#ifndef AppVersion
+  #define AppVersion "1.1.0"
+#endif
+#ifndef AppPublisher
+  #define AppPublisher "Taha Ilter Akar"
+#endif
+#ifndef AppURL
+  #define AppURL "https://github.com/tiameister/Omni-ML-GUI"
+#endif
+#ifndef AppExeName
+  #define AppExeName "OmniMLGUI.exe"
+#endif
+#ifndef AppCopyright
+  #define AppCopyright "Copyright (c) 2026 Taha Ilter Akar"
+#endif
 
 [Setup]
 AppId={{6B67F932-E303-4D66-9D61-B0D60BF7A573}
@@ -23,7 +35,7 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 LicenseFile=LICENSE
 OutputDir=dist
-OutputBaseFilename=OmniMLGUI-Setup
+OutputBaseFilename={#StringChange(AppExeName, ".exe", "")}-Setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -42,7 +54,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "dist\OmniMLGUI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\{#StringChange(AppExeName, ".exe", "")}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"

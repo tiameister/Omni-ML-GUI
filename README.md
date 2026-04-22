@@ -145,11 +145,15 @@ Output:
 
 ### Add Windows Branding (Icon + EXE metadata)
 
+Single source of truth for installer/EXE metadata:
+
+- `build_meta.json`
+
 1) Put your icon at:
 - `assets/app.ico`
 
-2) Edit version metadata file if needed:
-- `installer/windows_version_info.txt`
+2) Edit metadata (name/version/publisher/url/etc) in:
+- `build_meta.json`
 
 3) Rebuild:
 
@@ -158,7 +162,8 @@ python scripts/build_windows_exe.py --mode fast --clean-output
 python scripts/build_windows_installer.py
 ```
 
-Both EXE and installer automatically pick up `assets/app.ico` when present.
+Both EXE and installer automatically pick up `assets/app.ico` when present.  
+`installer/windows_version_info.txt` is auto-generated from `build_meta.json` during EXE build.
 
 
 

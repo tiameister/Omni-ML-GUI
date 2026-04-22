@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+import json
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules
@@ -6,6 +7,16 @@ from PyInstaller.utils.hooks import collect_submodules
 project_root = Path(SPECPATH)
 icon_path = project_root / "assets" / "app.ico"
 version_file = project_root / "installer" / "windows_version_info.txt"
+meta_path = project_root / "build_meta.json"
+
+app_exe_name = "OmniMLGUI"
+if meta_path.exists():
+    try:
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            meta = json.load(fh) or {}
+        app_exe_name = str(meta.get("exe_name", app_exe_name)).strip() or app_exe_name
+    except Exception:
+        pass
 
 datas = [
     (str(project_root / "locales"), "locales"),
@@ -54,7 +65,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="OmniMLGUI",
+    name=app_exe_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,
@@ -78,5 +89,5 @@ coll = COLLECT(
     strip=True,
     upx=False,
     upx_exclude=[],
-    name="OmniMLGUI",
+    name=app_exe_name,
 )
