@@ -108,6 +108,58 @@ If you prefer working without a GUI or want to run batch operations on a server,
 python main.py
 ```
 
+## Build a Windows EXE (Light + Fast)
+
+For the best startup speed, build in **fast mode** (`onedir`).
+If you want a single distributable file, use **single mode** (`onefile`).
+
+```bash
+pip install pyinstaller
+python scripts/build_windows_exe.py --mode fast --clean-output
+```
+
+Alternative single-file build:
+
+```bash
+python scripts/build_windows_exe.py --mode single --clean-output
+```
+
+Notes:
+- Run EXE builds on **Windows** (cross-building `.exe` from macOS is not supported by PyInstaller).
+- `fast` mode starts faster and is more stable for larger scientific stacks.
+- `single` mode is easier to share but can start slower because it self-extracts at launch.
+
+### Create a Professional Setup Installer (`Setup.exe`)
+
+After building in `fast` mode, you can create a Windows installer with Start Menu entry, optional desktop shortcut, and uninstall support.
+
+1) Install Inno Setup 6 from [jrsoftware.org](https://jrsoftware.org/isinfo.php)  
+2) Build installer:
+
+```bash
+python scripts/build_windows_installer.py
+```
+
+Output:
+- `dist/OmniMLGUI-Setup.exe`
+
+### Add Windows Branding (Icon + EXE metadata)
+
+1) Put your icon at:
+- `assets/app.ico`
+
+2) Edit version metadata file if needed:
+- `installer/windows_version_info.txt`
+
+3) Rebuild:
+
+```bash
+python scripts/build_windows_exe.py --mode fast --clean-output
+python scripts/build_windows_installer.py
+```
+
+Both EXE and installer automatically pick up `assets/app.ico` when present.
+
 
 
 ## Citation
